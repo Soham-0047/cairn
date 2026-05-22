@@ -1,0 +1,64 @@
+Here’s a **clean copy-paste prompt/table format** of your Gemini API Free Tier Rate Limits:
+
+## Gemini API Rate Limits (Free Tier)
+
+**Project:** Testing
+**Time Range:** Last 28 Days
+
+| Model                                | Category               | RPM (Requests/Min) | TPM (Tokens/Min) | RPD (Requests/Day) |
+| ------------------------------------ | ---------------------- | -----------------: | ---------------: | -----------------: |
+| Gemini 2.5 Flash                     | Text-out models        |                  5 |             250K |                 20 |
+| Gemini 2.5 Pro                       | Text-out models        |                  0 |                0 |                  0 |
+| Gemini 2 Flash                       | Text-out models        |                  0 |                0 |                  0 |
+| Gemini 2 Flash Lite                  | Text-out models        |                  0 |                0 |                  0 |
+| Gemini 2.5 Flash TTS                 | Multi-modal generative |                  3 |              10K |                 10 |
+| Gemini 2.5 Pro TTS                   | Multi-modal generative |                  0 |                0 |                  0 |
+| Imagen 4 Generate                    | Multi-modal generative |                  - |                - |                 25 |
+| Imagen 4 Ultra Generate              | Multi-modal generative |                  - |                - |                 25 |
+| Imagen 4 Fast Generate               | Multi-modal generative |                  - |                - |                 25 |
+| Gemma 4 26B                          | Other models           |                 15 |        Unlimited |               1.5K |
+| Gemma 4 31B                          | Other models           |                 15 |        Unlimited |               1.5K |
+| Gemini Embedding 1                   | Other models           |                100 |              30K |                 1K |
+| Gemini 3.5 Flash                     | Text-out models        |                  5 |             250K |                 20 |
+| Gemini 3.1 Flash Lite                | Text-out models        |                 15 |             250K |                500 |
+| Gemini 3.1 Pro                       | Text-out models        |                  0 |                0 |                  0 |
+| Gemini 2.5 Flash Lite                | Text-out models        |                 10 |             250K |                 20 |
+| Gemini 3 Flash                       | Text-out models        |                  5 |             250K |                 20 |
+| Gemini 3.1 Flash TTS                 | Multi-modal generative |                  3 |              10K |                 10 |
+| Gemini Robotics ER 1.5 Preview       | Other models           |                 10 |             250K |                 20 |
+| Gemini Robotics ER 1.6 Preview       | Other models           |                  5 |             250K |                 20 |
+| Gemini Embedding 2                   | Other models           |                100 |              30K |                 1K |
+| Gemini 2.5 Flash Native Audio Dialog | Live API               |          Unlimited |               1M |          Unlimited |
+| Gemini 3 Flash Live                  | Live API               |          Unlimited |              65K |          Unlimited |
+
+---
+
+## Tools / Grounding Limits
+
+| Model                          | Tool Type        | Limit (RPD) |
+| ------------------------------ | ---------------- | ----------: |
+| Gemini 2.5 Flash               | Map grounding    |         500 |
+| Gemini 3.1 Flash Lite          | Map grounding    |         500 |
+| Gemini 2.5 Flash Lite          | Map grounding    |         500 |
+| Gemini 3.1 Flash TTS           | Map grounding    |         500 |
+| Gemini Robotics ER 1.6 Preview | Map grounding    |         500 |
+| Computer Use Preview           | Map grounding    |         500 |
+| Deep Research Pro Preview      | Map grounding    |         500 |
+| Gemini 2                       | Search grounding |        1.5K |
+| Gemini 2.5                     | Search grounding |        1.5K |
+| Default                        | Search grounding |        1.5K |
+
+---
+
+## Best Free Models (Practical Use)
+
+| Use Case             | Best Model                           |
+| -------------------- | ------------------------------------ |
+| Fast text generation | Gemini 2.5 Flash                     |
+| High RPM             | Gemini 3.1 Flash Lite                |
+| Embeddings           | Gemini Embedding 2                   |
+| Image generation     | Imagen 4 Fast Generate               |
+| Live voice/audio     | Gemini 2.5 Flash Native Audio Dialog |
+| Large open model     | Gemma 4 31B                          |
+
+This is now **cleaned, deduplicated, and prompt-friendly** for copy-paste.
