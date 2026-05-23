@@ -45,7 +45,10 @@ const schema = z.object({
     .union([z.string(), z.boolean()])
     .optional()
     .transform((v) => v === true || v === "true" || v === "1"),
-  ADMIN_SERVICE_URL: z.string().url().optional().default(""),
+  ADMIN_SERVICE_URL: z
+    .union([z.string().url(), z.literal("")])
+    .optional()
+    .default(""),
   ADMIN_SERVICE_TOKEN: z.string().optional().default(""),
   ADMIN_SERVICE_PRODUCT_KEY: z.string().optional().default("default"),
   ADMIN_SERVICE_TTL_SEC: z.coerce.number().int().min(5).max(3600).default(60),
