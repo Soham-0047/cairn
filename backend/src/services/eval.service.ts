@@ -1,11 +1,28 @@
 import { Types } from "mongoose";
+import { EventEmitter } from "events";
 import { getRouter } from "../llm/router.js";
 import { PROJECT_EVAL_TEXT_PROMPT, PROJECT_EVAL_VISUAL_PROMPT } from "../llm/prompts.js";
 import { Evaluation, EvaluationDoc } from "../models/Evaluation.js";
 import { Credential } from "../models/Credential.js";
-import { fetchRepoSnapshot } from "./github.service.js";
+import { fetchRepoSnapshot, getDependencyVulnerabilities, type VulnSummary } from "./github.service.js";
 import { logger } from "../utils/logger.js";
+import { sendCredentialIssued, sendEvalComplete } from "./email.service.js";
 import type { Part } from "../llm/types.js";
+
+/**
+ * Process-local emitter that fans out per-evaluation stage updates to any SSE
+ * subscribers. Keyed by `String(evalDoc._id)`. Listeners get one event per
+ * stage transition (`running` → `complete`) plus a final synthesis event.
+ */
+export const evalEvents = new EventEmitter();
+evalEvents.setMaxListeners(0);
+
+export type EvalProgressEvent =
+  | { stage: number | "final"; status: "running" | "complete" | "failed"; label: string; score?: number; passed?: boolean; finalScore?: number };
+
+function emitProgress(evalId: string, event: EvalProgressEvent): void {
+  evalEvents.emit(evalId, event);
+}
 
 export type EvaluateProjectInput = {
   userId: Types.ObjectId | string;
@@ -68,10 +85,20 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
     status: "running",
   });
 
+  const evalId = String(evalDoc._id);
   try {
     // ---------- Stage 1: Structural heuristics ----------
+    emitProgress(evalId, { stage: 1, status: "running", label: "Structural analysis" });
     const snapshot = await fetchRepoSnapshot(input.repoUrl, input.userAccessToken);
-    const structural = scoreStructural(snapshot);
+
+    // Vulnerability scan via Dependabot — degrades silently if disabled.
+    const vulns = await getDependencyVulnerabilities(
+      snapshot.owner,
+      snapshot.repo,
+      input.userAccessToken,
+    );
+    const structural = scoreStructural(snapshot, vulns);
+    evalDoc.vulnerabilities = vulns;
     evalDoc.stages.push({
       name: "Structural",
       score: structural.score,
@@ -80,8 +107,15 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
     });
     evalDoc.repoOwner = snapshot.owner;
     evalDoc.repoName = snapshot.repo;
+    emitProgress(evalId, {
+      stage: 1,
+      status: "complete",
+      label: "Structural analysis",
+      score: structural.score,
+    });
 
     // ---------- Stage 2: Text-based code review (Gemma 4 27B) ----------
+    emitProgress(evalId, { stage: 2, status: "running", label: "Code review" });
     const router = getRouter();
     const textStart = Date.now();
     const { response: textRes, trace: textTrace } = await router.call("evaluate_project", {
@@ -95,6 +129,7 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
             readme: snapshot.readme,
             fileTree: snapshot.fileTree,
             codeExcerpts: snapshot.codeExcerpts,
+            vulnerabilities: vulns,
           }),
         },
       ],
@@ -116,10 +151,17 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
       model: textTrace.finalModel || "",
       latencyMs: Date.now() - textStart,
     });
+    emitProgress(evalId, {
+      stage: 2,
+      status: "complete",
+      label: "Code review",
+      score: clamp01(textResult.overall),
+    });
 
     // ---------- Stage 3: Multimodal visual review (Gemma 4 12B) ----------
     let visualResult: VisualEvalResult | null = null;
     if (input.screenshots && input.screenshots.length > 0) {
+      emitProgress(evalId, { stage: 3, status: "running", label: "Visual review" });
       const parts: Part[] = [
         {
           type: "text",
@@ -162,9 +204,16 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
         const s = evalDoc.screenshots[i];
         if (s) s.visualFindings = visualResult.findings?.[i] || visualResult.summary;
       }
+      emitProgress(evalId, {
+        stage: 3,
+        status: "complete",
+        label: "Visual review",
+        score: clamp01(visualResult.visualScore),
+      });
     }
 
     // ---------- Stage 4: Synthesis ----------
+    emitProgress(evalId, { stage: 4, status: "running", label: "Synthesis" });
     const finalScore = synthesize(structural.score, textResult, visualResult);
     evalDoc.finalScore = finalScore;
     evalDoc.passed = finalScore >= 0.65 && textResult.scores.originality >= 0.55;
@@ -199,6 +248,22 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
       });
     }
 
+    emitProgress(evalId, {
+      stage: "final",
+      status: "complete",
+      label: "Synthesis",
+      passed: evalDoc.passed,
+      finalScore: evalDoc.finalScore,
+    });
+
+    // Email notifications — best-effort; never block the response.
+    notifyEmails(input, evalDoc).catch((err) =>
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Email notification failed",
+      ),
+    );
+
     logger.info(
       { userId: input.userId, repo: input.repoUrl, finalScore, passed: evalDoc.passed },
       "Evaluation complete",
@@ -210,16 +275,46 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
     evalDoc.status = "failed";
     evalDoc.error = msg.slice(0, 500);
     await evalDoc.save();
+    emitProgress(evalId, {
+      stage: "final",
+      status: "failed",
+      label: "Synthesis",
+    });
     return evalDoc.toObject() as EvaluationDoc;
   }
 }
 
-function scoreStructural(snap: {
-  readme: string;
-  fileTree: string;
-  commitCount: number;
-  uniqueAuthors: number;
-}) {
+async function notifyEmails(
+  input: EvaluateProjectInput,
+  evalDoc: EvaluationDoc & { _id: Types.ObjectId },
+): Promise<void> {
+  // Lazy import to avoid pulling Mongo deps at module-load
+  const { User } = await import("../models/User.js");
+  const user = await User.findById(input.userId).lean();
+  if (!user?.email) return;
+
+  const frontendBase = process.env.FRONTEND_URL || "http://localhost:3000";
+  const portfolioUrl = `${frontendBase}/u/${user.handle}`;
+  await sendEvalComplete(user.email, {
+    passed: evalDoc.passed,
+    score: evalDoc.finalScore,
+    portfolioUrl,
+    projectTitle: input.projectTitle,
+  });
+  if (evalDoc.passed) {
+    await sendCredentialIssued(user.email, portfolioUrl, input.projectTitle);
+  }
+}
+
+function scoreStructural(
+  snap: {
+    readme: string;
+    fileTree: string;
+    commitCount: number;
+    uniqueAuthors: number;
+  },
+  vulns?: VulnSummary,
+) {
   const findings: string[] = [];
   let score = 0;
 
@@ -254,9 +349,25 @@ function scoreStructural(snap: {
     findings.push("Single-author commits");
   }
 
+  // Dependabot factor: critical/high deduct from the structural score, capped
+  // at -0.2 so a single bad transitive dep doesn't fail an otherwise solid PR.
+  if (vulns?.available) {
+    if (vulns.total === 0) {
+      findings.push("0 known dependency vulnerabilities");
+    } else {
+      const penalty = Math.min(0.2, vulns.critical * 0.1 + vulns.high * 0.05);
+      score -= penalty;
+      findings.push(
+        `${vulns.total} open Dependabot alert(s): ${vulns.critical} critical, ${vulns.high} high, ${vulns.medium} medium, ${vulns.low} low`,
+      );
+    }
+  } else if (vulns) {
+    findings.push("Dependabot not enabled — vuln scan skipped");
+  }
+
   return {
-    score: Math.min(1, score),
-    summary: `Structural score from README, commit history, tests, and tree.`,
+    score: Math.max(0, Math.min(1, score)),
+    summary: `Structural score from README, commit history, tests, tree, and dependency vulnerabilities.`,
     findings,
   };
 }

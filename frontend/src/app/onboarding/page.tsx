@@ -15,6 +15,7 @@ import { GuestBanner } from "@/components/ui/GuestIndicator";
 import { getGuestToken } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 import { TryAsGuestButton } from "@/components/TryAsGuestButton";
+import VoiceInput from "@/components/VoiceInput";
 
 type PathError = {
   error?: string;
@@ -49,6 +50,13 @@ const StepDots = ({ step, total }: { step: number; total: number }) => (
   </div>
 );
 
+type ActivePathSummary = {
+  _id: string;
+  targetRole?: string;
+  timelineWeeks?: number;
+  phases?: { milestones: { status: string }[] }[];
+} | null;
+
 export default function OnboardingPage() {
   const router = useRouter();
   const { status, data: session } = useSession();
@@ -58,10 +66,19 @@ export default function OnboardingPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<PathError | string | null>(null);
   const [hasGuest, setHasGuest] = useState(false);
+  const [activePath, setActivePath] = useState<ActivePathSummary>(null);
 
   useEffect(() => {
     setHasGuest(!!getGuestToken());
   }, []);
+
+  useEffect(() => {
+    if (status !== "authenticated" && !hasGuest) return;
+    proxyFetch("/paths/active")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setActivePath(data))
+      .catch(() => {});
+  }, [status, hasGuest]);
 
   useEffect(() => {
     if (goal) return;
@@ -154,6 +171,7 @@ export default function OnboardingPage() {
       </div>
 
       <div className="container" style={{ position: "relative", zIndex: 2, paddingTop: 80, paddingBottom: 80, maxWidth: 760 }}>
+        {!generating && activePath && <ActivePathBanner path={activePath} />}
         {generating ? (
           <GeneratingScene />
         ) : step === 0 ? (
@@ -247,12 +265,20 @@ export default function OnboardingPage() {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "flex-end",
+                      justifyContent: "space-between",
+                      gap: 12,
                       marginTop: 14,
                       paddingTop: 14,
                       borderTop: "1px solid var(--border)",
+                      flexWrap: "wrap",
                     }}
                   >
+                    <VoiceInput
+                      disabled={generating}
+                      onTranscript={(text) =>
+                        setGoal((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
+                      }
+                    />
                     <button
                       onClick={submit}
                       disabled={!goal.trim() || generating}
@@ -539,6 +565,68 @@ const GeneratingScene = () => {
         >
           T+{(step * 0.8).toFixed(1)}s · routing tokens · streaming
         </div>
+      </div>
+    </div>
+  );
+};
+
+const ActivePathBanner = ({ path }: { path: NonNullable<ActivePathSummary> }) => {
+  const milestones = path.phases?.flatMap((p) => p.milestones || []) || [];
+  const total = milestones.length;
+  const done = milestones.filter((m) => m.status === "done").length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return (
+    <div
+      style={{
+        marginBottom: 28,
+        padding: 18,
+        borderRadius: 14,
+        background: "linear-gradient(135deg, rgba(251,146,60,0.08), rgba(251,146,60,0.02))",
+        boxShadow: "inset 0 0 0 1px rgba(251,146,60,0.3)",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        flexWrap: "wrap",
+      }}
+    >
+      <div
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 10,
+          background: "rgba(251,146,60,0.18)",
+          boxShadow: "inset 0 0 0 1px rgba(251,146,60,0.4)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <Icon name="route" size={16} style={{ color: "#fdba74" }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ fontSize: 11, color: "#fdba74", textTransform: "uppercase", letterSpacing: ".14em" }}>
+          You already have an active path
+        </div>
+        <div className="serif" style={{ fontSize: 18, marginTop: 4, color: "var(--text-hi)" }}>
+          {path.targetRole || "Untitled goal"}{" "}
+          <span style={{ color: "var(--text-mid)", fontSize: 14 }}>
+            · {done}/{total} milestones · {pct}%
+          </span>
+        </div>
+        <div style={{ color: "var(--text-mid)", fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
+          Generating a new path will <strong style={{ color: "var(--text-hi)" }}>abandon</strong> the current one
+          (history is kept; credentials stay on your portfolio).
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        <Link
+          href="/dashboard"
+          className="btn-magnetic btn-ghost"
+          style={{ padding: "8px 14px", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
+          <Icon name="arrow-right" size={13} /> Keep current path
+        </Link>
       </div>
     </div>
   );

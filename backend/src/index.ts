@@ -15,8 +15,10 @@ import evalRoutes from "./routes/evaluations.js";
 import portfolioRoutes from "./routes/portfolio.js";
 import configRoutes from "./routes/config.js";
 import adminRoutes from "./routes/admin/index.js";
+import transcriptionRoutes from "./routes/transcription.js";
 import { seedEnvCredentials } from "./llm/providers/registry.js";
 import { getCredentialStore } from "./llm/credentialStore.js";
+import { startWeeklyNudgeJob } from "./jobs/weekly-nudge.js";
 
 async function main() {
   await connectDB();
@@ -58,6 +60,7 @@ async function main() {
   // Authed user APIs
   app.use("/api/paths", pathsRoutes);
   app.use("/api/evaluations", evalRoutes);
+  app.use("/api", transcriptionRoutes);
 
   // Public portfolio (no auth)
   app.use("/api/portfolio", portfolioRoutes);
@@ -70,6 +73,8 @@ async function main() {
   app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, "🚀 Cairn backend listening");
   });
+
+  startWeeklyNudgeJob();
 }
 
 main().catch((err) => {

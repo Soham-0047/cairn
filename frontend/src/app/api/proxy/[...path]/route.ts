@@ -20,25 +20,46 @@ async function forward(req: NextRequest, segments: string[]) {
   const path = "/api/" + segments.join("/");
   const url = `${backendUrl()}${path}${req.nextUrl.search}`;
 
-  const init: RequestInit = {
-    method: req.method,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+  const incomingType = req.headers.get("content-type") || "";
+  const isMultipart = incomingType.startsWith("multipart/");
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
   };
+  // For multipart we must preserve the original content-type (including the
+  // boundary param) and forward the raw bytes. For JSON we set our own.
+  if (isMultipart) {
+    headers["Content-Type"] = incomingType;
+  } else {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const init: RequestInit = { method: req.method, headers };
   if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = await req.text();
+    init.body = isMultipart
+      ? Buffer.from(await req.arrayBuffer())
+      : await req.text();
   }
 
   try {
     const res = await fetch(url, init);
+    const contentType = res.headers.get("content-type") || "application/json";
+    // Stream SSE responses straight through so progress events arrive in real
+    // time (calling .text() would buffer the whole stream).
+    if (contentType.includes("text/event-stream") && res.body) {
+      return new NextResponse(res.body, {
+        status: res.status,
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
     const body = await res.text();
     return new NextResponse(body, {
       status: res.status,
-      headers: {
-        "Content-Type": res.headers.get("content-type") || "application/json",
-      },
+      headers: { "Content-Type": contentType },
     });
   } catch (err) {
     // Network / DNS / refused-connection errors land here. Surface them so the

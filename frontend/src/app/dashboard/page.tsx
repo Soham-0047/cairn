@@ -1,11 +1,13 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
 import {
   Icon,
   KPIChip,
   MagneticButton,
+  Modal,
   ProgressRing,
   SmallEyebrow,
 } from "@/components/ui/primitives";
@@ -20,6 +22,8 @@ type Resource = {
   type: string;
   expectedMinutes: number;
   status: "pending" | "in_progress" | "done" | "skipped";
+  source?: "exa" | "tavily" | "corpus" | "llm";
+  summary?: string;
 };
 
 type Milestone = {
@@ -60,10 +64,12 @@ type Path = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { status, data: session } = useSession();
   const [path, setPath] = useState<Path | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasGuest, setHasGuest] = useState(false);
+  const [newPathOpen, setNewPathOpen] = useState(false);
 
   useEffect(() => {
     setHasGuest(!!getGuestToken());
@@ -158,9 +164,19 @@ export default function DashboardPage() {
           title="Your 12-week path"
           subtitle={`${path.targetRole || "Your goal"} track`}
           right={
-            <MagneticButton variant="ghost" href="/projects/new">
-              <Icon name="plus" size={14} /> New submission
-            </MagneticButton>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                onClick={() => setNewPathOpen(true)}
+                className="btn-magnetic btn-ghost"
+                style={{ padding: "8px 14px", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}
+                title="Generate a new path (current path will be abandoned)"
+              >
+                <Icon name="sparkles" size={14} /> New path
+              </button>
+              <MagneticButton variant="ghost" href="/projects/new">
+                <Icon name="plus" size={14} /> New submission
+              </MagneticButton>
+            </div>
           }
         />
         <div className="dash-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 32, padding: 32 }}>
@@ -177,6 +193,71 @@ export default function DashboardPage() {
           .dash-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
+      <Modal open={newPathOpen} onClose={() => setNewPathOpen(false)} width={520}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              background: "linear-gradient(135deg, rgba(251,146,60,0.25), rgba(251,146,60,0.05))",
+              boxShadow: "inset 0 0 0 1px rgba(251,146,60,0.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon name="sparkles" size={18} style={{ color: "#fdba74" }} />
+          </div>
+          <div>
+            <SmallEyebrow>Generate a new path</SmallEyebrow>
+            <h2 className="serif" style={{ fontSize: 24, margin: 0, letterSpacing: "-.02em" }}>
+              Replace your <i>current path</i>?
+            </h2>
+          </div>
+        </div>
+        <p style={{ color: "var(--text-mid)", fontSize: 14, lineHeight: 1.6, marginTop: 14 }}>
+          Your active path —{" "}
+          <span style={{ color: "var(--text-hi)" }}>
+            {path.targetRole || "untitled"}
+          </span>{" "}
+          ({done}/{total} milestones, {pct}%) — will be abandoned and kept in history.
+          Earned credentials stay on your portfolio.
+        </p>
+        <div
+          style={{
+            marginTop: 16,
+            padding: 14,
+            borderRadius: 10,
+            background: "var(--bg-2)",
+            boxShadow: "inset 0 0 0 1px var(--border)",
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            fontSize: 13,
+            color: "var(--text-mid)",
+            lineHeight: 1.5,
+          }}
+        >
+          <Icon name="lock" size={14} style={{ color: "var(--text-lo)", marginTop: 2, flexShrink: 0 }} />
+          <span>
+            This action can't be undone. Past credentials remain verifiable, but the abandoned path
+            won't accept new milestone updates.
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 22 }}>
+          <button
+            onClick={() => setNewPathOpen(false)}
+            className="btn-magnetic btn-ghost"
+            style={{ padding: "10px 16px", fontSize: 13 }}
+          >
+            Keep current path
+          </button>
+          <MagneticButton onClick={() => router.push("/onboarding")}>
+            Continue to onboarding <Icon name="arrow-right" size={14} />
+          </MagneticButton>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -455,8 +536,23 @@ const WeekNode = ({
                     >
                       {r.title}
                     </div>
-                    <div className="mono" style={{ fontSize: 10, color: "var(--text-mid)", marginTop: 2 }}>
-                      {r.type} · ~{r.expectedMinutes}m
+                    <div className="mono" style={{ fontSize: 10, color: "var(--text-mid)", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span>{r.type} · ~{r.expectedMinutes}m</span>
+                      {(r.source === "exa" || r.source === "tavily") && (
+                        <span
+                          style={{
+                            padding: "1px 6px",
+                            borderRadius: 6,
+                            fontSize: 9,
+                            letterSpacing: ".1em",
+                            background: "rgba(110,231,183,0.15)",
+                            color: "#6ee7b7",
+                            boxShadow: "inset 0 0 0 1px rgba(110,231,183,0.35)",
+                          }}
+                        >
+                          LIVE
+                        </span>
+                      )}
                     </div>
                   </div>
                   <Icon name="arrow-up-right" size={12} style={{ color: "var(--text-mid)" }} />

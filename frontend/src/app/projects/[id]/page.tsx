@@ -19,6 +19,15 @@ type StageResult = { name: string; score: number; summary: string; findings: str
 type ModelUsage = { stage: string; provider: string; model: string; latencyMs: number };
 type Screenshot = { label: string; dataUrl: string; visualFindings: string };
 
+type VulnSummary = {
+  available: boolean;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+};
+
 type EvalDoc = {
   _id: string;
   repoUrl: string;
@@ -27,6 +36,7 @@ type EvalDoc = {
   stages: StageResult[];
   screenshots: Screenshot[];
   modelsUsed: ModelUsage[];
+  vulnerabilities?: VulnSummary;
   finalScore: number;
   passed: boolean;
   feedback: string;
@@ -37,11 +47,18 @@ type EvalDoc = {
   createdAt?: string;
 };
 
+type StageProgress = {
+  status: "pending" | "running" | "complete" | "failed";
+  score?: number;
+  label: string;
+};
+
 export default function ProjectEvalPage() {
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<EvalDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
+  const [progress, setProgress] = useState<Record<string, StageProgress>>({});
 
   useEffect(() => {
     proxyFetch(`/evaluations/${params.id}`)
@@ -49,6 +66,75 @@ export default function ProjectEvalPage() {
       .then((d) => setData(d))
       .finally(() => setLoading(false));
   }, [params.id]);
+
+  // Subscribe to the SSE progress stream while the eval is still running. The
+  // stream auto-closes when the synthesis ("final") event arrives. The REST
+  // payload above is still the source of truth for the final rendered state.
+  useEffect(() => {
+    if (!data || data.status === "complete" || data.status === "failed") return;
+    let cancelled = false;
+    let abort: AbortController | null = new AbortController();
+
+    (async () => {
+      try {
+        const resp = await fetch(`/api/proxy/evaluations/${params.id}/progress`, {
+          signal: abort.signal,
+          headers: { Accept: "text/event-stream" },
+        });
+        if (!resp.body) return;
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!cancelled) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split("\n\n");
+          buffer = events.pop() || "";
+          for (const block of events) {
+            for (const line of block.split("\n")) {
+              if (!line.startsWith("data:")) continue;
+              const payload = line.slice(5).trim();
+              if (!payload) continue;
+              try {
+                const evt = JSON.parse(payload) as {
+                  stage: number | "final";
+                  status: "running" | "complete" | "failed";
+                  label: string;
+                  score?: number;
+                  passed?: boolean;
+                  finalScore?: number;
+                };
+                const key = String(evt.stage);
+                setProgress((prev) => ({
+                  ...prev,
+                  [key]: { status: evt.status, score: evt.score, label: evt.label },
+                }));
+                if (evt.stage === "final") {
+                  // Refresh the REST payload so the UI gets the final score,
+                  // credential state, screenshots, etc.
+                  proxyFetch(`/evaluations/${params.id}`)
+                    .then((r) => r.json())
+                    .then((d) => setData(d))
+                    .catch(() => {});
+                }
+              } catch {
+                // ignore malformed lines
+              }
+            }
+          }
+        }
+      } catch {
+        // SSE failed — REST polling above already populated the page.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      abort?.abort();
+      abort = null;
+    };
+  }, [data, params.id]);
 
   if (loading) {
     return (
@@ -154,6 +240,10 @@ export default function ProjectEvalPage() {
             </div>
           </div>
 
+          {data.status === "running" || data.status === "queued" ? (
+            <LiveProgress progress={progress} />
+          ) : null}
+
           <Tabs
             value={tab}
             onChange={setTab}
@@ -166,7 +256,7 @@ export default function ProjectEvalPage() {
           />
 
           <div style={{ marginTop: 24 }}>
-            {tab === "overview" && <Overview stages={stageScores} models={data.modelsUsed} />}
+            {tab === "overview" && <Overview stages={stageScores} models={data.modelsUsed} vulnerabilities={data.vulnerabilities} />}
             {tab === "code" && <CodeReview strengths={data.strengths} improvements={data.improvements} stages={stageScores} />}
             {tab === "visual" && <VisualReview screenshots={data.screenshots} />}
             {tab === "credential" && <Credential data={data} score={score} />}
@@ -178,12 +268,168 @@ export default function ProjectEvalPage() {
   );
 }
 
+const STAGE_LABELS = ["Structural analysis", "Code review", "Visual review", "Synthesis"];
+
+const LiveProgress = ({ progress }: { progress: Record<string, StageProgress> }) => {
+  const rows = STAGE_LABELS.map((label, i) => {
+    const key = String(i + 1);
+    const p = progress[key];
+    const status = p?.status || (i === 0 ? "running" : "pending");
+    return { label, status, score: p?.score, idx: i };
+  });
+  const finalP = progress["final"];
+  return (
+    <div className="card" style={{ padding: 22, marginBottom: 16 }}>
+      <SmallEyebrow>Live progress · streaming</SmallEyebrow>
+      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((r) => (
+          <div
+            key={r.idx}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: "var(--bg-2)",
+              boxShadow: "inset 0 0 0 1px var(--border)",
+            }}
+          >
+            <StatusDot status={r.status} />
+            <span style={{ fontSize: 14, flex: 1 }}>{r.label}</span>
+            {typeof r.score === "number" && (
+              <span className="mono" style={{ fontSize: 11, color: "var(--text-mid)" }}>
+                {Math.round(r.score * 100)}/100
+              </span>
+            )}
+          </div>
+        ))}
+        {finalP && (
+          <div style={{ fontSize: 12, color: "var(--text-mid)", marginTop: 4 }}>
+            {finalP.status === "complete"
+              ? "Synthesis complete — refreshing results…"
+              : finalP.status === "failed"
+              ? "Synthesis failed."
+              : "Synthesising…"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const StatusDot = ({ status }: { status: StageProgress["status"] }) => {
+  if (status === "complete") {
+    return (
+      <span
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: 999,
+          background: "#6ee7b7",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <Icon name="check" size={10} style={{ color: "#0f172a" }} />
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: 999,
+          background: "#fca5a5",
+          color: "#0f172a",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 10,
+          fontWeight: 700,
+          flexShrink: 0,
+        }}
+      >
+        ×
+      </span>
+    );
+  }
+  if (status === "running") {
+    return (
+      <span
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: 999,
+          border: "2px solid rgba(165,180,252,0.4)",
+          borderTopColor: "#a5b4fc",
+          animation: "spin 0.9s linear infinite",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      style={{
+        width: 16,
+        height: 16,
+        borderRadius: 999,
+        background: "var(--bg-0)",
+        boxShadow: "inset 0 0 0 1.5px var(--border)",
+        flexShrink: 0,
+      }}
+    />
+  );
+};
+
+const VulnerabilitiesRow = ({ v }: { v: VulnSummary }) => {
+  if (!v.available) {
+    return (
+      <div className="card" style={{ padding: 16, opacity: 0.7 }}>
+        <SmallEyebrow>Dependencies</SmallEyebrow>
+        <p style={{ marginTop: 8, fontSize: 13, color: "var(--text-lo)" }}>
+          Dependabot not enabled on this repo
+        </p>
+      </div>
+    );
+  }
+  const danger = v.critical > 0 || v.high > 0;
+  const warn = !danger && (v.medium > 0 || v.low > 0);
+  const color = danger ? "#fca5a5" : warn ? "#fdba74" : "#6ee7b7";
+  const label = danger
+    ? `${v.critical + v.high} critical/high vulnerabilities — see Dependabot`
+    : warn
+    ? `${v.medium + v.low} medium/low vulnerabilities`
+    : "0 known vulnerabilities";
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <SmallEyebrow>Dependencies</SmallEyebrow>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: color }} />
+        <span style={{ fontSize: 13, color: "var(--text-hi)" }}>{label}</span>
+      </div>
+      {v.total > 0 && (
+        <div className="mono" style={{ fontSize: 10, color: "var(--text-mid)", marginTop: 6, letterSpacing: ".08em" }}>
+          C:{v.critical} · H:{v.high} · M:{v.medium} · L:{v.low}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Overview = ({
   stages,
   models,
+  vulnerabilities,
 }: {
   stages: (StageResult & { pct: number })[];
   models: ModelUsage[];
+  vulnerabilities?: VulnSummary;
 }) => {
   if (!stages.length) {
     return <p style={{ color: "var(--text-mid)" }}>No stage results.</p>;
@@ -230,7 +476,12 @@ const Overview = ({
           </div>
         );
       })}
-      <style>{`@media(max-width:900px){.overview-grid{grid-template-columns:1fr !important;}}`}</style>
+      {vulnerabilities && (
+        <div style={{ gridColumn: "span 2" }}>
+          <VulnerabilitiesRow v={vulnerabilities} />
+        </div>
+      )}
+      <style>{`@media(max-width:900px){.overview-grid{grid-template-columns:1fr !important;}} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 };

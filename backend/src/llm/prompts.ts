@@ -36,8 +36,20 @@ ${JSON.stringify(params.resources.slice(0, 25), null, 2)}
 
 ${
   params.similarLearners.length
-    ? `SIMILAR PAST LEARNERS (use as evidence of what works, not as templates):
-${JSON.stringify(params.similarLearners, null, 2)}`
+    ? `SIMILAR PAST LEARNERS — real Cairn users who pursued comparable goals
+(use this evidence to calibrate difficulty and avoid known pitfalls; do NOT
+copy their path verbatim — adapt to this learner's profile):
+${params.similarLearners
+  .map((l, i) => {
+    const o = l as Record<string, unknown>;
+    const score = typeof o.score === "number" ? (o.score as number).toFixed(2) : "?";
+    return `${i + 1}. similarity=${score} — goal: "${o.goal ?? ""}", skills: ${
+      Array.isArray(o.skills) ? (o.skills as string[]).join(", ") : ""
+    }, level: ${o.level ?? "unknown"}${
+      o.weeklyOutcomes ? `, outcomes: ${o.weeklyOutcomes}` : ""
+    }`;
+  })
+  .join("\n")}`
     : ""
 }
 
@@ -91,6 +103,14 @@ export const PROJECT_EVAL_TEXT_PROMPT = (params: {
   readme: string;
   fileTree: string;
   codeExcerpts: string;
+  vulnerabilities?: {
+    available: boolean;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    total: number;
+  };
 }) => `You are evaluating whether a developer's project demonstrates real, original work.
 
 PROJECT: ${params.projectTitle}
@@ -104,6 +124,12 @@ ${params.fileTree.slice(0, 3000)}
 
 CODE EXCERPTS:
 ${params.codeExcerpts.slice(0, 8000)}
+
+${
+  params.vulnerabilities?.available
+    ? `DEPENDENCY SCAN: ${params.vulnerabilities.total} open vulnerabilities (${params.vulnerabilities.critical} critical, ${params.vulnerabilities.high} high, ${params.vulnerabilities.medium} medium, ${params.vulnerabilities.low} low). Factor this into the security quality score.`
+    : "DEPENDENCY SCAN: Dependabot not enabled — security-quality data unavailable."
+}
 
 Score the project across:
 1. Functionality — does the code do what the README claims?

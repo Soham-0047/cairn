@@ -2,6 +2,63 @@ import { Octokit } from "@octokit/rest";
 import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 
+export interface VulnSummary {
+  available: boolean;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+}
+
+export async function getDependencyVulnerabilities(
+  repoOwner: string,
+  repoName: string,
+  userAccessToken?: string,
+): Promise<VulnSummary> {
+  const auth = userAccessToken || env.GITHUB_TOKEN_FOR_PUBLIC_READS || undefined;
+  const octokit = new Octokit({ auth });
+  try {
+    const res = await octokit.rest.dependabot.listAlertsForRepo({
+      owner: repoOwner,
+      repo: repoName,
+      state: "open",
+      per_page: 100,
+    });
+    const alerts = res.data || [];
+    const summary: VulnSummary = {
+      available: true,
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      total: alerts.length,
+    };
+    for (const a of alerts) {
+      const sev = (a.security_advisory?.severity || "").toLowerCase();
+      if (sev === "critical") summary.critical++;
+      else if (sev === "high") summary.high++;
+      else if (sev === "medium" || sev === "moderate") summary.medium++;
+      else if (sev === "low") summary.low++;
+    }
+    logger.info(
+      { owner: repoOwner, repo: repoName, ...summary },
+      "Dependabot alerts fetched",
+    );
+    return summary;
+  } catch (err) {
+    logger.info(
+      {
+        owner: repoOwner,
+        repo: repoName,
+        reason: err instanceof Error ? err.message : String(err),
+      },
+      "Dependabot unavailable — skipping vuln scan",
+    );
+    return { available: false, critical: 0, high: 0, medium: 0, low: 0, total: 0 };
+  }
+}
+
 export type RepoSnapshot = {
   owner: string;
   repo: string;

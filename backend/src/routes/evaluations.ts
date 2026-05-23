@@ -4,7 +4,7 @@ import { Evaluation } from "../models/Evaluation.js";
 import { User } from "../models/User.js";
 import { requireUser, type AuthedRequest } from "../middleware/auth.js";
 import { checkGuestLimit } from "../middleware/guestLimits.js";
-import { evaluateProject } from "../services/eval.service.js";
+import { evaluateProject, evalEvents, type EvalProgressEvent } from "../services/eval.service.js";
 import { logger } from "../utils/logger.js";
 
 const router = Router();
@@ -67,6 +67,65 @@ router.get("/:id", requireUser, async (req: AuthedRequest, res) => {
   const item = await Evaluation.findOne({ _id: req.params.id, userId: req.userId }).lean();
   if (!item) return res.status(404).json({ error: "Not found" });
   res.json(item);
+});
+
+/**
+ * SSE progress stream for a live evaluation. The frontend opens this on the
+ * results page and lights up each stage as it completes. Auth runs against
+ * the same JWT middleware as the REST endpoints; the existing REST GET above
+ * remains the source of truth for already-complete evaluations.
+ */
+router.get("/:id/progress", requireUser, async (req: AuthedRequest, res) => {
+  const item = await Evaluation.findOne({ _id: req.params.id, userId: req.userId }).lean();
+  if (!item) return res.status(404).json({ error: "Not found" });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  const evalId = String(item._id);
+  const write = (event: EvalProgressEvent) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+
+  // Replay current state so a late subscriber sees what already happened.
+  const stages = item.stages || [];
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    if (!s) continue;
+    write({ stage: i + 1, status: "complete", label: s.name, score: s.score });
+  }
+  if (item.status === "complete") {
+    write({
+      stage: "final",
+      status: "complete",
+      label: "Synthesis",
+      passed: item.passed,
+      finalScore: item.finalScore,
+    });
+    return res.end();
+  }
+  if (item.status === "failed") {
+    write({ stage: "final", status: "failed", label: "Synthesis" });
+    return res.end();
+  }
+
+  const listener = (event: EvalProgressEvent) => write(event);
+  evalEvents.on(evalId, listener);
+
+  const keepalive = setInterval(() => {
+    res.write(": keepalive\n\n");
+  }, 15_000);
+
+  const cleanup = () => {
+    clearInterval(keepalive);
+    evalEvents.off(evalId, listener);
+    logger.info({ evalId }, "SSE subscriber disconnected");
+  };
+  req.on("close", cleanup);
+  req.on("error", cleanup);
 });
 
 export default router;

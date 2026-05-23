@@ -30,7 +30,7 @@ export default function LandingPage() {
       <BentoEvaluation />
       <PortfolioPreview />
       <WhyGemma />
-      <Pricing />
+      {/* <Pricing /> hidden for hackathon */}
       <FAQ />
       <Footer />
       <Modal open={demoOpen} onClose={() => setDemoOpen(false)} width={840}>

@@ -23,6 +23,19 @@ const schema = z.object({
   CEREBRAS_API_KEY: z.string().optional().default(""),
   TOGETHER_API_KEY: z.string().optional().default(""),
   HF_API_KEY: z.string().optional().default(""),
+
+  // Resource search — Exa.ai (primary), Tavily (fallback). Both optional.
+  EXA_API_KEY: z.string().optional().default(""),
+  EXA_FALLBACK_TAVILY_KEY: z.string().optional().default(""),
+
+  // Qdrant vector store — for "similar past learners" recall during path generation.
+  QDRANT_URL: z.string().optional().default(""),
+  QDRANT_API_KEY: z.string().optional().default(""),
+  QDRANT_COLLECTION: z.string().optional().default("cairn_paths"),
+
+  // Resend — transactional email. Optional; missing key degrades to no-op.
+  RESEND_API_KEY: z.string().optional().default(""),
+  FROM_EMAIL: z.string().optional().default("onboarding@resend.dev"),
 });
 
 const parsed = schema.safeParse(process.env);

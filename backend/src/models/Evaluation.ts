@@ -35,6 +35,22 @@ const evaluationSchema = new Schema(
     /** Multimodal: optional screenshots the user uploaded. */
     screenshots: { type: [screenshotSchema], default: [] },
 
+    /** Dependency vulnerabilities from Stage 1 (Dependabot via GitHub API). */
+    vulnerabilities: {
+      type: new Schema(
+        {
+          available: { type: Boolean, default: false },
+          critical: { type: Number, default: 0 },
+          high: { type: Number, default: 0 },
+          medium: { type: Number, default: 0 },
+          low: { type: Number, default: 0 },
+          total: { type: Number, default: 0 },
+        },
+        { _id: false },
+      ),
+      default: () => ({ available: false, critical: 0, high: 0, medium: 0, low: 0, total: 0 }),
+    },
+
     finalScore: { type: Number, min: 0, max: 1, default: 0 },
     passed: { type: Boolean, default: false },
     feedback: { type: String, default: "" },

@@ -6,6 +6,9 @@ import { Path, PathDoc } from "../models/Path.js";
 import { User } from "../models/User.js";
 import { logger } from "../utils/logger.js";
 import type { Types } from "mongoose";
+import { searchResourcesForMilestone } from "./resource-search.service.js";
+import { embedText } from "./embedding.service.js";
+import { findSimilarPaths, upsertPath } from "./vector-store.service.js";
 
 export type ParsedGoal = {
   targetRole: string;
@@ -168,10 +171,77 @@ async function pickResources(profile: ParsedGoal, goalText?: string) {
   }));
 }
 
-async function pickSimilarLearners(_profile: ParsedGoal) {
-  // v1: no embeddings yet. Future: pgvector / cosine on profile embedding.
-  // Return empty list — Gemma 4 still handles cold start gracefully.
-  return [];
+async function pickSimilarLearners(profile: ParsedGoal, goalText: string) {
+  // Embed the new user's goal + role + skill summary and ask Qdrant for the 3
+  // most similar past paths. Each one comes back with score + payload. We only
+  // surface hits above the cosine-similarity floor (0.75) to keep noise out of
+  // the LLM context.
+  try {
+    const embedString = `Goal: ${goalText}. Target: ${profile.targetRole}. Skills: ${
+      profile.currentSkills.map((s) => `${s.skill}(${s.level})`).join(", ") || "none"
+    }. Level: ${profile.currentSkills.length ? "intermediate" : "beginner"}`;
+    const embedding = await embedText(embedString);
+    const hits = await findSimilarPaths(embedding, 3);
+    return hits.filter((h) => h.score > 0.75);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "pickSimilarLearners: skipping (no embeddings)",
+    );
+    return [];
+  }
+}
+
+/**
+ * After Gemma returns a structured path, replace each milestone's resources
+ * with 3 freshly-fetched live tutorials from Exa (with Tavily / corpus fallback).
+ * Runs all milestone searches in parallel so the user-visible latency stays
+ * close to a single search round-trip.
+ */
+type PlanPhase = {
+  name?: string;
+  description?: string;
+  weeks?: number[];
+  milestones?: PlanMilestone[];
+  projects?: { skills?: string[] }[];
+};
+type PlanMilestone = {
+  topic: string;
+  resources?: unknown[];
+};
+
+async function attachLiveResources(phases: unknown): Promise<void> {
+  if (!Array.isArray(phases)) return;
+  const tasks: Promise<void>[] = [];
+  for (const phase of phases as PlanPhase[]) {
+    for (const milestone of phase.milestones || []) {
+      const skills = phase.projects?.flatMap((p) => p.skills || []) || [];
+      tasks.push(
+        searchResourcesForMilestone(milestone.topic, skills).then((live) => {
+          if (live.length === 0) return; // keep LLM-picked resources as fallback
+          milestone.resources = live.map((r) => ({
+            title: r.title,
+            url: r.url,
+            type: inferResourceType(r.url),
+            expectedMinutes: 30,
+            status: "pending" as const,
+            source: r.source,
+            summary: r.summary,
+            publishedDate: r.publishedDate || "",
+          }));
+        }),
+      );
+    }
+  }
+  await Promise.all(tasks);
+}
+
+function inferResourceType(url: string): "video" | "article" | "course" | "book" | "doc" {
+  const u = url.toLowerCase();
+  if (u.includes("youtube.com") || u.includes("youtu.be") || u.includes("vimeo")) return "video";
+  if (u.includes("/docs") || u.includes("developer.mozilla.org") || u.includes("docs.python.org")) return "doc";
+  if (u.includes("freecodecamp.org/learn") || u.includes("coursera") || u.includes("udemy")) return "course";
+  return "article";
 }
 
 type ResourceForPath = {
@@ -192,7 +262,7 @@ type ResourceForPath = {
 function buildFallbackPath(
   profile: ParsedGoal,
   resources: ResourceForPath[],
-): { summary: string; stretchGoalWarning?: string; phases: PathDoc["phases"] } {
+): { summary: string; stretchGoalWarning?: string; phases: unknown } {
   const weeks = Math.max(4, Math.min(52, profile.timelineWeeks || 12));
   // Split into 4 phases proportional to weeks.
   const cuts = [
@@ -280,7 +350,8 @@ function buildFallbackPath(
   const pickRes = (n: number) => {
     const out: ResourceForPath[] = [];
     for (let i = 0; i < n && pool.length > 0; i++) {
-      out.push(pool[cursor % pool.length]);
+      const r = pool[cursor % pool.length];
+      if (r) out.push(r);
       cursor++;
     }
     return out.map((r) => ({
@@ -292,7 +363,7 @@ function buildFallbackPath(
     }));
   };
 
-  const phases: PathDoc["phases"] = phaseDefs.map((def, i) => {
+  const phases = phaseDefs.map((def, i) => {
     const phaseWeeks = ranges[i] || [];
     const milestones = phaseWeeks.map((week) => ({
       week,
@@ -328,14 +399,14 @@ export async function generatePath(params: {
 
   const [resources, similar] = await Promise.all([
     pickResources(parsed, params.goal),
-    pickSimilarLearners(parsed),
+    pickSimilarLearners(parsed, params.goal),
   ]);
 
   const router = getRouter();
   let planJson: {
     summary?: string;
     stretchGoalWarning?: string;
-    phases?: PathDoc["phases"];
+    phases?: unknown;
   } = {};
   let finalProvider = "";
   let finalModel = "";
@@ -411,6 +482,18 @@ export async function generatePath(params: {
     finalModel = "template-v1";
   }
 
+  // Replace LLM-picked resource URLs with live tutorial search results so
+  // milestones reference current pages, not whatever Gemma half-remembered.
+  // Best-effort: if every backend fails the original LLM picks stay in place.
+  try {
+    await attachLiveResources(planJson.phases || []);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "attachLiveResources failed — keeping LLM-picked resources",
+    );
+  }
+
   // Persist
   const created = await Path.create({
     userId: params.userId,
@@ -432,6 +515,28 @@ export async function generatePath(params: {
     "profile.background": parsed.background,
     onboarded: true,
   });
+
+  // Fire-and-forget: embed this path's goal and upsert into Qdrant so the next
+  // similar learner gets it surfaced. Failure here must not break the response.
+  (async () => {
+    try {
+      const embedString = `Goal: ${params.goal}. Skills: ${parsed.currentSkills
+        .map((s) => s.skill)
+        .join(", ")}. Level: ${parsed.currentSkills.length ? "intermediate" : "beginner"}`;
+      const embedding = await embedText(embedString);
+      await upsertPath(String(created._id), embedding, {
+        goal: params.goal,
+        targetRole: parsed.targetRole,
+        skills: parsed.currentSkills.map((s) => s.skill),
+        level: parsed.currentSkills.length ? "intermediate" : "beginner",
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err), pathId: String(created._id) },
+        "Qdrant upsert (post-save) failed",
+      );
+    }
+  })();
 
   return created.toObject() as PathDoc;
 }

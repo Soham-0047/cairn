@@ -11,6 +11,14 @@ const resourceRefSchema = new Schema(
       enum: ["pending", "in_progress", "done", "skipped"],
       default: "pending",
     },
+    /** Where this resource came from — used to badge "Live" results on the dashboard. */
+    source: {
+      type: String,
+      enum: ["exa", "tavily", "corpus", "llm"],
+      default: "llm",
+    },
+    summary: { type: String, default: "" },
+    publishedDate: { type: String, default: "" },
   },
   { _id: false },
 );

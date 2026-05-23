@@ -9,7 +9,12 @@ import { getGuestToken } from "./guest";
 export async function proxyFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const guestToken = getGuestToken();
   const headers = new Headers(init.headers);
-  if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
+  // For FormData bodies, let the browser set the multipart Content-Type itself
+  // so the boundary is correct. Only default to JSON for other body shapes.
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+  if (!headers.has("Content-Type") && init.body && !isFormData) {
+    headers.set("Content-Type", "application/json");
+  }
   if (guestToken) headers.set("X-Guest-Token", guestToken);
   return fetch(`/api/proxy${path}`, { ...init, headers });
 }
