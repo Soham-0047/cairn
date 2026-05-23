@@ -36,6 +36,19 @@ const schema = z.object({
   // Resend — transactional email. Optional; missing key degrades to no-op.
   RESEND_API_KEY: z.string().optional().default(""),
   FROM_EMAIL: z.string().optional().default("onboarding@resend.dev"),
+
+  // External admin-service (centralized credential vault). When enabled, the
+  // credential store and site config are sourced from this service instead of
+  // the local Mongo collections. Local /api/admin/* routes still work as a
+  // fallback so dev keeps going if the admin-service is offline.
+  ADMIN_SERVICE_ENABLED: z
+    .union([z.string(), z.boolean()])
+    .optional()
+    .transform((v) => v === true || v === "true" || v === "1"),
+  ADMIN_SERVICE_URL: z.string().url().optional().default(""),
+  ADMIN_SERVICE_TOKEN: z.string().optional().default(""),
+  ADMIN_SERVICE_PRODUCT_KEY: z.string().optional().default("default"),
+  ADMIN_SERVICE_TTL_SEC: z.coerce.number().int().min(5).max(3600).default(60),
 });
 
 const parsed = schema.safeParse(process.env);

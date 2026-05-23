@@ -1,6 +1,7 @@
 import { ApiCredential, ApiCredentialDoc } from "../models/ApiCredential.js";
 import { decryptSecret, encryptSecret } from "../utils/crypto.js";
 import { logger } from "../utils/logger.js";
+import { fetchCredentials, isEnabled as adminServiceEnabled, reportCredentialResult } from "../services/admin-client.js";
 
 /**
  * In-memory pool of API credentials, fronted by the ApiCredential collection.
@@ -34,42 +35,29 @@ class CredentialStore {
   private loaded = false;
   private loading: Promise<void> | null = null;
 
-  /** Load (or reload) the cache from Mongo. Idempotent. */
+  /**
+   * Load (or reload) the cache.
+   *
+   * Source priority:
+   *   1. External admin-service (when ADMIN_SERVICE_ENABLED). The plaintext
+   *      keys come back over HTTPS, so no local decryption is needed.
+   *   2. Local Mongo `ApiCredential` collection — legacy / fallback path.
+   *
+   * Either way the in-memory shape is identical so consumers (LLM providers)
+   * don't care which backend supplied the keys.
+   */
   async reload(): Promise<void> {
     if (this.loading) return this.loading;
     this.loading = (async () => {
       try {
-        const docs = await ApiCredential.find({ enabled: true })
-          .sort({ priority: 1, createdAt: 1 })
-          .lean();
-        const next = new Map<string, Candidate[]>();
-        for (const d of docs) {
-          let key: string;
-          try {
-            key = decryptSecret(d.secret as { ciphertext: string; iv: string; authTag: string });
-          } catch (err) {
-            logger.warn(
-              { credId: String(d._id), service: d.service, err: (err as Error).message },
-              "Failed to decrypt credential — skipping (likely encrypted under a different JWT_SECRET)",
-            );
-            continue;
-          }
-          const c: Candidate = {
-            id: String(d._id),
-            service: d.service,
-            label: d.label,
-            key,
-            metadata: (d.metadata as Record<string, unknown>) || {},
-            priority: d.priority ?? 100,
-          };
-          const arr = next.get(d.service) || [];
-          arr.push(c);
-          next.set(d.service, arr);
-        }
+        const next = adminServiceEnabled()
+          ? await loadFromAdminService()
+          : await loadFromLocalMongo();
         this.byService = next;
         this.loaded = true;
         logger.info(
           {
+            source: adminServiceEnabled() ? "admin-service" : "local-mongo",
             services: Object.fromEntries(
               Array.from(this.byService.entries()).map(([k, v]) => [k, v.length]),
             ),
@@ -78,7 +66,6 @@ class CredentialStore {
         );
       } catch (err) {
         logger.error({ err }, "CredentialStore reload failed");
-        // Don't poison the cache on error.
       } finally {
         this.loading = null;
       }
@@ -139,6 +126,10 @@ class CredentialStore {
   }
 
   async markSuccess(credId: string): Promise<void> {
+    if (adminServiceEnabled()) {
+      reportCredentialResult(credId, true);
+      return;
+    }
     try {
       await ApiCredential.updateOne(
         { _id: credId },
@@ -150,6 +141,10 @@ class CredentialStore {
   }
 
   async markFailure(credId: string, reason: string): Promise<void> {
+    if (adminServiceEnabled()) {
+      reportCredentialResult(credId, false, reason);
+      return;
+    }
     try {
       await ApiCredential.updateOne(
         { _id: credId },
@@ -225,4 +220,54 @@ let _store: CredentialStore | null = null;
 export function getCredentialStore(): CredentialStore {
   if (!_store) _store = new CredentialStore();
   return _store;
+}
+
+async function loadFromAdminService(): Promise<Map<string, Candidate[]>> {
+  const services = await fetchCredentials(true);
+  const next = new Map<string, Candidate[]>();
+  for (const [service, creds] of Object.entries(services)) {
+    next.set(
+      service,
+      creds.map((c) => ({
+        id: c.id,
+        service,
+        label: c.label,
+        key: c.key,
+        metadata: c.metadata,
+        priority: c.priority,
+      })),
+    );
+  }
+  return next;
+}
+
+async function loadFromLocalMongo(): Promise<Map<string, Candidate[]>> {
+  const docs = await ApiCredential.find({ enabled: true })
+    .sort({ priority: 1, createdAt: 1 })
+    .lean();
+  const next = new Map<string, Candidate[]>();
+  for (const d of docs) {
+    let key: string;
+    try {
+      key = decryptSecret(d.secret as { ciphertext: string; iv: string; authTag: string });
+    } catch (err) {
+      logger.warn(
+        { credId: String(d._id), service: d.service, err: (err as Error).message },
+        "Failed to decrypt credential — skipping (likely encrypted under a different JWT_SECRET)",
+      );
+      continue;
+    }
+    const c: Candidate = {
+      id: String(d._id),
+      service: d.service,
+      label: d.label,
+      key,
+      metadata: (d.metadata as Record<string, unknown>) || {},
+      priority: d.priority ?? 100,
+    };
+    const arr = next.get(d.service) || [];
+    arr.push(c);
+    next.set(d.service, arr);
+  }
+  return next;
 }

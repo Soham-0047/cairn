@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: #0b0d12;
+  color: #e6e8ee;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+input, textarea, select, button {
+  font-family: inherit;
+}
+
+.input {
+  width: 100%;
+  background: #11141b;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: inherit;
+  outline: none;
+}
+.input:focus { border-color: #6366F1; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #6366F1;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+}
+.btn:hover { background: #4f52d0; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: #e6e8ee;
+  border: 1px solid #2a2f3a;
+}
+.btn-ghost:hover { background: #1a1d27; }
+
+.btn-danger { background: #dc2626; }
+.btn-danger:hover { background: #b91c1c; }
+
+.card {
+  background: #11141b;
+  border: 1px solid #2a2f3a;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8b94a7;
+  margin-bottom: 6px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #1a1d27;
+  color: #c5cbd6;
+}
+.pill-ok { background: rgba(52, 211, 153, 0.15); color: #6ee7b7; }
+.pill-err { background: rgba(220, 38, 38, 0.15); color: #fca5a5; }

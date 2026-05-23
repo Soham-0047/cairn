@@ -19,13 +19,39 @@ import transcriptionRoutes from "./routes/transcription.js";
 import { seedEnvCredentials } from "./llm/providers/registry.js";
 import { getCredentialStore } from "./llm/credentialStore.js";
 import { startWeeklyNudgeJob } from "./jobs/weekly-nudge.js";
+import { isEnabled as adminServiceEnabled, ping as adminServicePing } from "./services/admin-client.js";
 
 async function main() {
   await connectDB();
-  // Migrate legacy env-vars into the encrypted credential vault, then warm the
-  // in-memory cache so the very first request finds usable keys.
-  await seedEnvCredentials();
+
+  if (adminServiceEnabled()) {
+    // Credentials live in the central admin-service. Skip the local-Mongo env
+    // seed and just probe that the service is reachable — the credential store
+    // will pull keys over HTTP on its first reload.
+    const probe = await adminServicePing();
+    if (probe.ok) {
+      logger.info("admin-service reachable; credentials will be sourced remotely");
+    } else {
+      logger.warn(
+        { detail: probe.detail },
+        "admin-service NOT reachable — credentials will be empty until it comes online",
+      );
+    }
+  } else {
+    // Legacy path: migrate env-vars into the local encrypted vault.
+    await seedEnvCredentials();
+  }
   await getCredentialStore().reload();
+
+  // When the admin-service is the source of truth, refresh on a timer so
+  // rotations / new keys propagate without a gamma redeploy. TTL matches the
+  // admin-client's local cache TTL — no point pulling more often.
+  if (adminServiceEnabled()) {
+    const everyMs = env.ADMIN_SERVICE_TTL_SEC * 1000;
+    setInterval(() => {
+      getCredentialStore().reload().catch(() => {});
+    }, everyMs).unref();
+  }
 
   const app = express();
 
