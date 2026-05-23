@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CairnMark, Icon, MagneticButton } from "./primitives";
+import { proxyFetch } from "@/lib/clientFetch";
 
 /* ------------------------ Top Nav (landing) ------------------------ */
 export const TopNav = () => {
@@ -247,6 +248,57 @@ export const Sidebar = ({ active, userName, userEmail, userHandle, targetRole, w
 };
 
 /* ------------------------ Topbar (app) ------------------------ */
+type UserStats = {
+  xp: number;
+  streak: number;
+  completedMilestones: number;
+  totalMilestones: number;
+  passedEvals: number;
+  totalEvals: number;
+};
+
+type Notification = {
+  id: string;
+  kind: "success" | "warning" | "info" | "error";
+  title: string;
+  body: string;
+  href: string;
+  createdAt: string;
+};
+
+const useTheme = () => {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => {
+    const saved = (typeof window !== "undefined" && localStorage.getItem("cairn:theme")) as
+      | "dark"
+      | "light"
+      | null;
+    const t = saved || "dark";
+    setTheme(t);
+    document.documentElement.setAttribute("data-theme", t);
+  }, []);
+  const toggle = useCallback(() => {
+    setTheme((curr) => {
+      const next = curr === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try {
+        localStorage.setItem("cairn:theme", next);
+      } catch {}
+      return next;
+    });
+  }, []);
+  return { theme, toggle };
+};
+
+const formatRelative = (iso: string) => {
+  const then = new Date(iso).getTime();
+  const diff = Date.now() - then;
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+};
+
 export const Topbar = ({
   title,
   subtitle,
@@ -255,58 +307,491 @@ export const Topbar = ({
   title: ReactNode;
   subtitle?: ReactNode;
   right?: ReactNode;
-}) => (
-  <header
-    style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      padding: "22px 32px",
-      borderBottom: "1px solid var(--border)",
-      background: "color-mix(in srgb, var(--bg-0) 80%, transparent)",
-      backdropFilter: "blur(12px)",
-      position: "sticky",
-      top: 0,
-      zIndex: 30,
-    }}
-  >
-    <div>
-      {subtitle && (
-        <div style={{ fontSize: 12, color: "var(--text-mid)", textTransform: "uppercase", letterSpacing: ".14em" }}>
-          {subtitle}
+}) => {
+  const { status } = useSession();
+  const [stats, setStats] = useState<UserStats | null>(null);
+  const [notifs, setNotifs] = useState<Notification[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const { theme, toggle } = useTheme();
+
+  const hasAuthContext = status === "authenticated" || (typeof window !== "undefined" && !!localStorage.getItem("cairn_guest_token"));
+
+  useEffect(() => {
+    if (!hasAuthContext) return;
+    proxyFetch("/auth/me/stats")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setStats(d))
+      .catch(() => {});
+    proxyFetch("/auth/me/notifications")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.items && setNotifs(d.items))
+      .catch(() => {});
+  }, [hasAuthContext]);
+
+  // global keyboard shortcut for search (⌘K / Ctrl+K)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((x) => !x);
+      } else if (e.key === "Escape") {
+        setSearchOpen(false);
+        setNotifOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const unreadCount = notifs.filter((n) => {
+    const ageMs = Date.now() - new Date(n.createdAt).getTime();
+    return ageMs < 7 * 24 * 3600 * 1000;
+  }).length;
+
+  return (
+    <header
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "22px 32px",
+        borderBottom: "1px solid var(--border)",
+        background: "color-mix(in srgb, var(--bg-0) 80%, transparent)",
+        backdropFilter: "blur(12px)",
+        position: "sticky",
+        top: 0,
+        zIndex: 30,
+      }}
+    >
+      <div>
+        {subtitle && (
+          <div style={{ fontSize: 12, color: "var(--text-mid)", textTransform: "uppercase", letterSpacing: ".14em" }}>
+            {subtitle}
+          </div>
+        )}
+        <h1 className="serif" style={{ fontSize: 30, margin: 0, letterSpacing: "-.02em" }}>{title}</h1>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div className="pill" style={{ gap: 8 }} title={`Daily streak: ${stats?.streak ?? 0} days`}>
+          <Icon name="flame" size={12} style={{ color: "#fb923c" }} /> {stats?.streak ?? 0} day streak
         </div>
-      )}
-      <h1 className="serif" style={{ fontSize: 30, margin: 0, letterSpacing: "-.02em" }}>{title}</h1>
-    </div>
-    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-      <div className="pill" style={{ gap: 8 }}>
-        <Icon name="flame" size={12} style={{ color: "#fb923c" }} /> 7 day streak
+        <div className="pill" style={{ gap: 8 }} title={`XP: ${stats?.xp ?? 0}`}>
+          <Icon name="spark" size={12} style={{ color: "#a5b4fc" }} /> {(stats?.xp ?? 0).toLocaleString()} XP
+        </div>
+        <button
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search"
+          className="btn-magnetic btn-ghost"
+          style={{ padding: 8 }}
+          title="Search (⌘K)"
+        >
+          <Icon name="search" size={14} />
+        </button>
+        <NotifBell
+          notifs={notifs}
+          unread={unreadCount}
+          open={notifOpen}
+          setOpen={setNotifOpen}
+        />
+        <button
+          onClick={toggle}
+          aria-label="Toggle theme"
+          className="btn-magnetic btn-ghost"
+          style={{ padding: 8 }}
+          title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+        >
+          <Icon name={theme === "dark" ? "sun" : "moon"} size={14} />
+        </button>
+        {right}
       </div>
-      <div className="pill" style={{ gap: 8 }}>
-        <Icon name="sparkles" size={12} style={{ color: "#a5b4fc" }} /> 1,240 XP
-      </div>
-      <button className="btn-magnetic btn-ghost" style={{ padding: 8 }}>
-        <Icon name="search" size={14} />
-      </button>
-      <button className="btn-magnetic btn-ghost" style={{ padding: 8, position: "relative" }}>
+
+      {searchOpen && <SearchPalette onClose={() => setSearchOpen(false)} />}
+    </header>
+  );
+};
+
+/* ------------------------ Notification bell ------------------------ */
+const NotifBell = ({
+  notifs,
+  unread,
+  open,
+  setOpen,
+}: {
+  notifs: Notification[];
+  unread: number;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+}) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open, setOpen]);
+
+  const kindColor = (k: Notification["kind"]) =>
+    k === "success" ? "#6ee7b7" : k === "warning" ? "#fdba74" : k === "error" ? "#f87171" : "#a5b4fc";
+
+  return (
+    <div style={{ position: "relative" }} ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        aria-label="Notifications"
+        className="btn-magnetic btn-ghost"
+        style={{ padding: 8, position: "relative" }}
+      >
         <Icon name="bell" size={14} />
-        <span
+        {unread > 0 && (
+          <span
+            style={{
+              position: "absolute",
+              top: 4,
+              right: 4,
+              minWidth: 14,
+              height: 14,
+              padding: "0 4px",
+              borderRadius: 999,
+              background: "#FB923C",
+              color: "#0a0a0f",
+              fontSize: 9,
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 0 8px rgba(251,146,60,0.6)",
+            }}
+          >
+            {unread > 9 ? "9+" : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
           style={{
             position: "absolute",
-            top: 6,
-            right: 6,
-            width: 6,
-            height: 6,
-            borderRadius: 999,
-            background: "#FB923C",
-            boxShadow: "0 0 8px #FB923C",
+            top: "calc(100% + 10px)",
+            right: 0,
+            width: 360,
+            maxHeight: 460,
+            overflow: "auto",
+            background: "var(--bg-1)",
+            border: "1px solid var(--border-strong)",
+            borderRadius: 14,
+            boxShadow: "0 30px 60px -20px rgba(0,0,0,0.5)",
+            zIndex: 50,
           }}
-        />
-      </button>
-      {right}
+        >
+          <div
+            style={{
+              padding: "14px 16px",
+              borderBottom: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ fontSize: 14, color: "var(--text-hi)" }}>Notifications</div>
+            <span className="mono" style={{ fontSize: 10, color: "var(--text-mid)" }}>
+              {notifs.length} total
+            </span>
+          </div>
+          {notifs.length === 0 ? (
+            <div style={{ padding: 28, textAlign: "center", color: "var(--text-mid)", fontSize: 13 }}>
+              <Icon name="bell-off" size={20} style={{ color: "var(--text-lo)", marginBottom: 8 }} />
+              <div>You're all caught up.</div>
+              <div style={{ fontSize: 11, marginTop: 4 }}>Submit a project to see updates here.</div>
+            </div>
+          ) : (
+            notifs.map((n) => (
+              <Link
+                key={n.id}
+                href={n.href}
+                onClick={() => setOpen(false)}
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  padding: "14px 16px",
+                  borderBottom: "1px solid var(--border)",
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: kindColor(n.kind),
+                    boxShadow: `0 0 8px ${kindColor(n.kind)}`,
+                    marginTop: 6,
+                    flexShrink: 0,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: "var(--text-hi)", lineHeight: 1.4 }}>{n.title}</div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-mid)",
+                      marginTop: 3,
+                      lineHeight: 1.45,
+                      overflow: "hidden",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {n.body}
+                  </div>
+                  <div className="mono" style={{ fontSize: 10, color: "var(--text-lo)", marginTop: 6 }}>
+                    {formatRelative(n.createdAt)}
+                  </div>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
+      )}
     </div>
-  </header>
-);
+  );
+};
+
+/* ------------------------ Search palette ------------------------ */
+type SearchItem = {
+  id: string;
+  label: string;
+  sublabel: string;
+  href: string;
+  kind: "project" | "milestone" | "page";
+};
+
+const STATIC_PAGES: SearchItem[] = [
+  { id: "p:dashboard", label: "Dashboard", sublabel: "Your 12-week path", href: "/dashboard", kind: "page" },
+  { id: "p:projects", label: "Projects", sublabel: "Submitted evaluations", href: "/projects", kind: "page" },
+  { id: "p:new", label: "New submission", sublabel: "Submit a GitHub repo", href: "/projects/new", kind: "page" },
+  { id: "p:onboarding", label: "Onboarding", sublabel: "Generate your path", href: "/onboarding", kind: "page" },
+  { id: "p:settings", label: "Settings", sublabel: "Profile & preferences", href: "/settings", kind: "page" },
+];
+
+const SearchPalette = ({ onClose }: { onClose: () => void }) => {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const [items, setItems] = useState<SearchItem[]>([]);
+  const [active, setActive] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const collected: SearchItem[] = [...STATIC_PAGES];
+    Promise.all([
+      proxyFetch("/evaluations").then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      proxyFetch("/paths/active").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([evals, path]) => {
+      if (cancelled) return;
+      if (Array.isArray(evals)) {
+        evals.forEach((e: { _id: string; projectTitle: string; repoUrl: string }) => {
+          collected.push({
+            id: `e:${e._id}`,
+            label: e.projectTitle || "Untitled project",
+            sublabel: (e.repoUrl || "").replace(/^https?:\/\/(www\.)?github\.com\//, "") || "project",
+            href: `/projects/${e._id}`,
+            kind: "project",
+          });
+        });
+      }
+      if (path?.phases) {
+        path.phases.forEach((ph: { milestones: { week: number; topic: string; deliverable: string }[] }) => {
+          ph.milestones.forEach((m) => {
+            collected.push({
+              id: `m:${m.week}`,
+              label: m.topic,
+              sublabel: `Week ${m.week} · ${m.deliverable || "milestone"}`,
+              href: `/dashboard`,
+              kind: "milestone",
+            });
+          });
+        });
+      }
+      setItems(collected);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return items.slice(0, 12);
+    return items
+      .filter((i) => i.label.toLowerCase().includes(needle) || i.sublabel.toLowerCase().includes(needle))
+      .slice(0, 12);
+  }, [items, q]);
+
+  useEffect(() => {
+    setActive(0);
+  }, [q]);
+
+  const go = (i: SearchItem) => {
+    onClose();
+    router.push(i.href);
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(7,7,11,0.6)",
+        backdropFilter: "blur(8px)",
+        zIndex: 100,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: "12vh",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(640px, 92vw)",
+          background: "var(--bg-1)",
+          border: "1px solid var(--border-strong)",
+          borderRadius: 16,
+          boxShadow: "0 30px 80px -20px rgba(0,0,0,0.7)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "16px 18px",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <Icon name="search" size={16} style={{ color: "var(--text-mid)" }} />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActive((a) => Math.min(filtered.length - 1, a + 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((a) => Math.max(0, a - 1));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (filtered[active]) go(filtered[active]);
+              }
+            }}
+            placeholder="Search projects, milestones, pages…"
+            style={{
+              flex: 1,
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              fontSize: 16,
+              color: "var(--text-hi)",
+            }}
+          />
+          <span className="mono" style={{ fontSize: 11, color: "var(--text-mid)" }}>
+            ESC
+          </span>
+        </div>
+        <div style={{ maxHeight: "60vh", overflow: "auto", padding: 8 }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: 36, textAlign: "center", color: "var(--text-mid)", fontSize: 13 }}>
+              No matches for "{q}".
+            </div>
+          ) : (
+            filtered.map((i, idx) => {
+              const isActive = idx === active;
+              const icon =
+                i.kind === "project" ? "cube" : i.kind === "milestone" ? "route" : "arrow-right";
+              return (
+                <button
+                  key={i.id}
+                  onMouseEnter={() => setActive(idx)}
+                  onClick={() => go(i)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    background: isActive ? "var(--bg-2)" : "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: "inherit",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 8,
+                      background: "var(--bg-2)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Icon name={icon} size={13} style={{ color: "var(--text-mid)" }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "var(--text-hi)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {i.label}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-mid)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {i.sublabel}
+                    </div>
+                  </div>
+                  <span
+                    className="pill"
+                    style={{ fontSize: 10, color: "var(--text-mid)", textTransform: "capitalize" }}
+                  >
+                    {i.kind}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 /* ------------------------ Footer ------------------------ */
 export const Footer = () => (

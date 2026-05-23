@@ -1,64 +1,386 @@
-Here’s a **clean copy-paste prompt/table format** of your Gemini API Free Tier Rate Limits:
+# Cairn — Upgrade Prompt for Claude Code
 
-## Gemini API Rate Limits (Free Tier)
+> Paste this entire file into Claude Code. Work through each phase in order.
+---
 
-**Project:** Testing
-**Time Range:** Last 28 Days
+## Context
 
-| Model                                | Category               | RPM (Requests/Min) | TPM (Tokens/Min) | RPD (Requests/Day) |
-| ------------------------------------ | ---------------------- | -----------------: | ---------------: | -----------------: |
-| Gemini 2.5 Flash                     | Text-out models        |                  5 |             250K |                 20 |
-| Gemini 2.5 Pro                       | Text-out models        |                  0 |                0 |                  0 |
-| Gemini 2 Flash                       | Text-out models        |                  0 |                0 |                  0 |
-| Gemini 2 Flash Lite                  | Text-out models        |                  0 |                0 |                  0 |
-| Gemini 2.5 Flash TTS                 | Multi-modal generative |                  3 |              10K |                 10 |
-| Gemini 2.5 Pro TTS                   | Multi-modal generative |                  0 |                0 |                  0 |
-| Imagen 4 Generate                    | Multi-modal generative |                  - |                - |                 25 |
-| Imagen 4 Ultra Generate              | Multi-modal generative |                  - |                - |                 25 |
-| Imagen 4 Fast Generate               | Multi-modal generative |                  - |                - |                 25 |
-| Gemma 4 26B                          | Other models           |                 15 |        Unlimited |               1.5K |
-| Gemma 4 31B                          | Other models           |                 15 |        Unlimited |               1.5K |
-| Gemini Embedding 1                   | Other models           |                100 |              30K |                 1K |
-| Gemini 3.5 Flash                     | Text-out models        |                  5 |             250K |                 20 |
-| Gemini 3.1 Flash Lite                | Text-out models        |                 15 |             250K |                500 |
-| Gemini 3.1 Pro                       | Text-out models        |                  0 |                0 |                  0 |
-| Gemini 2.5 Flash Lite                | Text-out models        |                 10 |             250K |                 20 |
-| Gemini 3 Flash                       | Text-out models        |                  5 |             250K |                 20 |
-| Gemini 3.1 Flash TTS                 | Multi-modal generative |                  3 |              10K |                 10 |
-| Gemini Robotics ER 1.5 Preview       | Other models           |                 10 |             250K |                 20 |
-| Gemini Robotics ER 1.6 Preview       | Other models           |                  5 |             250K |                 20 |
-| Gemini Embedding 2                   | Other models           |                100 |              30K |                 1K |
-| Gemini 2.5 Flash Native Audio Dialog | Live API               |          Unlimited |               1M |          Unlimited |
-| Gemini 3 Flash Live                  | Live API               |          Unlimited |              65K |          Unlimited |
+This is the Cairn codebase — a Gemma 4 powered learning + career engine. The repo has:
+
+- `frontend/` — Next.js 15, React, TypeScript, Tailwind, NextAuth
+- `backend/` — Express, TypeScript, MongoDB/Mongoose
+- `backend/src/llm/` — provider-agnostic LLM router with fallback chains
+- `backend/src/services/path.service.ts` — goal parsing + 12-week path generation
+- `backend/src/services/eval.service.ts` — 3-stage multimodal evaluation pipeline
+- `backend/src/llm/providers/registry.ts` — LLM provider config
+
+Read the full codebase structure before starting. Every change must preserve existing functionality — do not break any working route or service.
 
 ---
 
-## Tools / Grounding Limits
+## Phase 1 — Groq Whisper Voice Onboarding (highest impact, lowest effort)
 
-| Model                          | Tool Type        | Limit (RPD) |
-| ------------------------------ | ---------------- | ----------: |
-| Gemini 2.5 Flash               | Map grounding    |         500 |
-| Gemini 3.1 Flash Lite          | Map grounding    |         500 |
-| Gemini 2.5 Flash Lite          | Map grounding    |         500 |
-| Gemini 3.1 Flash TTS           | Map grounding    |         500 |
-| Gemini Robotics ER 1.6 Preview | Map grounding    |         500 |
-| Computer Use Preview           | Map grounding    |         500 |
-| Deep Research Pro Preview      | Map grounding    |         500 |
-| Gemini 2                       | Search grounding |        1.5K |
-| Gemini 2.5                     | Search grounding |        1.5K |
-| Default                        | Search grounding |        1.5K |
+**Goal:** Let users speak their learning goal on the onboarding page instead of typing it.
+The transcription feeds directly into the existing Gemma 4B profile parser — no changes to
+`path.service.ts` needed. The mic button is additive; the text input stays as fallback.
+
+### Backend
+
+1. Add `GROQ_API_KEY` to `backend/.env.example` with a comment:
+   `# Groq API key — get free at console.groq.com (used for Whisper STT)`
+
+2. Create `backend/src/services/transcription.service.ts`:
+   - Export `async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<string>`
+   - POST to `https://api.groq.com/openai/v1/audio/transcriptions`
+   - Use model `whisper-large-v3`
+   - Send as `multipart/form-data` with fields: `file` (the buffer), `model`, `response_format: "text"`
+   - Auth header: `Authorization: Bearer ${process.env.GROQ_API_KEY}`
+   - If `GROQ_API_KEY` is not set, throw a clear error: `"GROQ_API_KEY not configured"`
+   - Add Pino structured logging: log provider, model, audio size in bytes, and latency
+
+3. Create `backend/src/routes/transcription.ts`:
+   - `POST /api/transcribe`
+   - Requires JWT auth (same middleware used on `/api/paths`)
+   - Accept `multipart/form-data` — use `multer` with memory storage, max file size 10MB
+   - Accepted mime types: `audio/webm`, `audio/mp4`, `audio/wav`, `audio/ogg` — reject others with 400
+   - Call `transcriptionService.transcribeAudio()`, return `{ text: string }`
+   - Wrap in try/catch, return 502 if Groq call fails with the error message
+
+4. Mount the route in `backend/src/index.ts` (or wherever routes are registered):
+   `app.use('/api', transcriptionRouter)`
+
+### Frontend
+
+5. Install no new packages — use the browser's native `MediaRecorder` API.
+
+6. Create `frontend/src/components/VoiceInput.tsx`:
+   - A mic button (`<button>`) that toggles recording state
+   - On click: request `getUserMedia({ audio: true })`, start `MediaRecorder`
+   - Collect chunks into a `Blob` on `ondataavailable`
+   - On stop: POST the blob as `FormData` to `/api/transcribe` with the session JWT
+   - On success: call an `onTranscript(text: string)` prop — the parent sets the goal input value
+   - Show three states visually: idle (mic icon), recording (pulsing red dot + "Recording…"), processing (spinner + "Transcribing…")
+   - On error: show a dismissable inline error message, do not crash
+   - Export as default
+
+7. In the onboarding page/component (wherever the free-form goal `<textarea>` or `<input>` lives):
+   - Import `VoiceInput`
+   - Place it directly adjacent to the text input
+   - Wire `onTranscript` to set the input value — user can then edit before submitting
+   - The text input must still work independently
+
+8. Add `GROQ_API_KEY` to `frontend/.env.example` only if the frontend needs it directly.
+   Prefer routing through the backend (it already handles auth).
+
+### Validation
+
+- Record a 10-second audio clip in the browser → transcription appears in the goal input
+- Text input still works when mic is not used
+- If `GROQ_API_KEY` is missing, backend returns a clear 502 (not a crash)
+- File > 10MB is rejected with 400 before it hits Groq
 
 ---
 
-## Best Free Models (Practical Use)
+## Phase 2 — Exa.ai Live Resource Search (replaces static seeded corpus)
 
-| Use Case             | Best Model                           |
-| -------------------- | ------------------------------------ |
-| Fast text generation | Gemini 2.5 Flash                     |
-| High RPM             | Gemini 3.1 Flash Lite                |
-| Embeddings           | Gemini Embedding 2                   |
-| Image generation     | Imagen 4 Fast Generate               |
-| Live voice/audio     | Gemini 2.5 Flash Native Audio Dialog |
-| Large open model     | Gemma 4 31B                          |
+**Goal:** Replace the static resource corpus (seeded via `npm run seed`) with live semantic
+search powered by Exa.ai. Every milestone in the generated path gets the 3 freshest,
+most relevant free tutorials fetched at generation time.
 
-This is now **cleaned, deduplicated, and prompt-friendly** for copy-paste.
+### Setup
+
+1. Add to `backend/.env.example`:
+   `EXA_API_KEY=      # get free at exa.ai — 1000 searches/month`
+   `EXA_FALLBACK_TAVILY_KEY=   # optional fallback — get at tavily.com`
+
+2. `npm install exa-js` in `backend/`
+
+### Resource search service
+
+3. Create `backend/src/services/resource-search.service.ts`:
+
+   ```
+   interface ResourceResult {
+     title: string
+     url: string
+     summary: string
+     publishedDate?: string
+     source: 'exa' | 'tavily' | 'corpus'
+   }
+   ```
+
+   Export `async function searchResourcesForMilestone(milestoneTitle: string, skills: string[]): Promise<ResourceResult[]>`:
+
+   - Build a query: `"${milestoneTitle} tutorial free ${skills.join(' ')}"` — keep it under 100 chars
+   - **Try Exa first** (if `EXA_API_KEY` is set):
+     - Use `exa-js` client
+     - Call `exa.searchAndContents(query, { numResults: 3, useAutoprompt: true, type: 'neural', includeDomains: ['youtube.com', 'freecodecamp.org', 'dev.to', 'medium.com', 'github.com', 'docs.python.org', 'developer.mozilla.org', 'roadmap.sh'] })`
+     - Map results to `ResourceResult[]` with `source: 'exa'`
+   - **Fallback to Tavily** (if Exa fails or key not set, and `EXA_FALLBACK_TAVILY_KEY` is set):
+     - POST to `https://api.tavily.com/search` with `{ query, api_key, search_depth: "basic", max_results: 3 }`
+     - Map results, `source: 'tavily'`
+   - **Final fallback** — query the existing MongoDB Resource collection (the old seeded corpus):
+     - Text search or regex match on `milestoneTitle` words
+     - Return up to 3, `source: 'corpus'`
+   - Log which source was used, the query, and latency via Pino
+   - Never throw — always return at least an empty array
+
+4. In `backend/src/services/path.service.ts`, in the path generation function:
+   - After Gemma 4 27B returns the structured 12-week path JSON
+   - For each week's milestone (or whichever granularity the path uses), call `searchResourcesForMilestone(milestone.title, milestone.skills)`
+   - Attach the results to the milestone as `milestone.resources`
+   - This replaces any static resource lookup that currently happens
+   - Keep the total generation time reasonable — run milestone resource searches in parallel with `Promise.all()`, not sequentially
+
+### Frontend
+
+5. In the path dashboard week/milestone display component:
+   - If a resource has `source: 'exa'` or `'tavily'`, show a small "Live" badge next to it
+   - If `source: 'corpus'`, no badge (silent fallback)
+   - Resource links must open in a new tab
+
+### Validation
+
+- Generate a path with `EXA_API_KEY` set — resources on each milestone should be current URLs, not seeded data
+- Remove `EXA_API_KEY`, generate again — falls back to Tavily or corpus, no crash
+- Resources are attached to the path object saved in MongoDB (they persist, not re-fetched on each view)
+
+---
+
+## Phase 3 — Google Embeddings + Qdrant "Similar Learners" (makes the AI smarter)
+
+**Goal:** When generating a new user's path, find the 3 most similar past learners from
+completed paths and inject their outcomes into Gemma 27B's context. This makes the
+"similar past learner data" in `prompts.ts` actually real.
+
+### Setup
+
+1. Add to `backend/.env.example`:
+   ```
+   QDRANT_URL=https://YOUR-CLUSTER.qdrant.io   # free cluster at cloud.qdrant.io
+   QDRANT_API_KEY=                              # from Qdrant Cloud dashboard
+   QDRANT_COLLECTION=cairn_paths
+   ```
+
+2. `npm install @qdrant/js-client-rest` in `backend/`
+
+3. No new Google key needed — use `GOOGLE_AI_API_KEY` already in `.env`
+
+### Embedding service
+
+4. Create `backend/src/services/embedding.service.ts`:
+
+   Export `async function embedText(text: string): Promise<number[]>`:
+   - POST to `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GOOGLE_AI_API_KEY}`
+   - Body: `{ model: "models/text-embedding-004", content: { parts: [{ text }] } }`
+   - Return `response.embedding.values` (a 768-dimensional float array)
+   - Cache the result in a simple in-memory Map keyed by a hash of the text (paths don't change)
+   - Log model, input length, and latency
+
+### Qdrant setup
+
+5. Create `backend/src/services/vector-store.service.ts`:
+
+   On startup, ensure collection exists:
+   - `qdrantClient.getCollection(COLLECTION)` — if 404, create it:
+     `qdrantClient.createCollection(COLLECTION, { vectors: { size: 768, distance: 'Cosine' } })`
+
+   Export `async function upsertPath(pathId: string, embedding: number[], metadata: object): Promise<void>`:
+   - Upsert a single point: `{ id: pathId, vector: embedding, payload: metadata }`
+
+   Export `async function findSimilarPaths(embedding: number[], topK = 3): Promise<SimilarPath[]>`:
+   - `qdrantClient.search(COLLECTION, { vector: embedding, limit: topK, with_payload: true })`
+   - Return `{ pathId, score, goal, weeklyOutcomes, completedAt }` for each hit
+
+### Wire into path generation
+
+6. In `backend/src/services/path.service.ts`, after a path is **saved to MongoDB**:
+   - Build an embed string: `"Goal: ${path.goal}. Skills: ${path.skills.join(', ')}. Level: ${path.currentLevel}"`
+   - Call `embedText(embedString)` then `upsertPath(path._id.toString(), embedding, { goal, skills, level })`
+   - Do this async — don't await it in the request cycle (fire-and-forget with error logging)
+
+7. In the **path generation function**, before calling Gemma 27B:
+   - Embed the new user's goal string
+   - Call `findSimilarPaths(embedding, 3)`
+   - If results exist (score > 0.75), format them into a `similarLearnersContext` string:
+     ```
+     Similar learners who completed this path:
+     1. Goal: "…" — completed in 11 weeks. Struggled with week 6 (Docker). Succeeded by...
+     ```
+   - Inject this string into the existing Gemma 27B path-generation prompt in `prompts.ts`
+     at the placeholder that currently says something like `{similarLearnerData}` —
+     if no placeholder exists, add one in a logical position before the output format spec
+
+8. In `prompts.ts`, update the path generation prompt to use `similarLearnersContext` properly.
+   The LLM should use it to avoid known pitfalls and calibrate the difficulty curve.
+
+### Validation
+
+- Generate 2 paths with different goals — both upsert to Qdrant (check Qdrant Cloud dashboard)
+- Generate a 3rd path similar to the 1st — the prompt sent to Gemma 27B should contain similar learner context
+- If Qdrant is unreachable, path generation still works (the similar-learner block is simply omitted)
+- Qdrant and embedding calls must not add more than ~800ms to path generation (they run before the LLM call which takes seconds anyway)
+
+---
+
+## Phase 4 — GitHub Security Advisories in Stage 1 Eval (zero cost, high credibility)
+
+**Goal:** Add dependency vulnerability scanning to Stage 1 of the eval pipeline using the
+GitHub Security Advisories API. Already using Octokit — this is ~30 lines of new code.
+
+### Implementation
+
+1. In `backend/src/services/eval.service.ts` (or `github.service.ts`), add:
+
+   Export `async function getDependencyVulnerabilities(repoOwner: string, repoName: string): Promise<VulnSummary>`:
+
+   - Use the existing Octokit instance
+   - Call `octokit.rest.dependabot.listAlertsForRepo({ owner: repoOwner, repo: repoName, state: 'open' })`
+   - If the repo has Dependabot disabled or the token lacks permission, catch the error and return `{ available: false }`
+   - Return:
+     ```typescript
+     interface VulnSummary {
+       available: boolean
+       critical: number
+       high: number
+       medium: number
+       low: number
+       total: number
+     }
+     ```
+
+2. In Stage 1 of the evaluation pipeline, after the existing structural checks:
+   - Parse `repoUrl` to extract `owner` and `repo` name
+   - Call `getDependencyVulnerabilities(owner, repo)`
+   - Add to the Stage 1 result object: `vulnerabilities: VulnSummary`
+   - Factor into the Stage 1 score: 0 vulns = full score on this dimension, critical vulns deduct points (define the weighting, suggested: critical=-0.1 each, high=-0.05 each, capped at -0.2 total)
+
+3. In the Stage 2 code-review prompt (`prompts.ts`), include the vuln summary:
+   `"Dependency scan: ${total} open vulnerabilities (${critical} critical, ${high} high). Factor this into the security quality score."`
+
+4. In the eval results frontend page (`/projects/[id]`):
+   - Show a "Dependencies" row in the Stage 1 results section
+   - Green: "0 known vulnerabilities"
+   - Amber: "N medium/low vulnerabilities"
+   - Red: "N critical/high vulnerabilities — see Dependabot"
+   - If `available: false`, show "Dependabot not enabled" in muted text (no penalty)
+
+### Validation
+
+- Submit a repo with known Dependabot alerts — they appear in the eval result
+- Submit a repo without Dependabot enabled — `available: false`, no crash, no score penalty
+- The vuln count appears in the Stage 2 prompt logged via Pino
+
+---
+
+## Phase 5 — SSE Real-time Eval Progress (zero infrastructure cost)
+
+**Goal:** Replace any polling on the eval results page with Server-Sent Events so users
+watch Stage 1 → 2 → 3 → 4 light up in real time as each completes.
+
+### Backend
+
+1. In `backend/src/routes/evaluations.ts`, add a new route:
+   `GET /api/evaluations/:id/progress`
+
+   - Auth: JWT required
+   - Set headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`
+   - On connect: immediately send current eval status from MongoDB as first event
+   - Subscribe to eval progress updates (see step 2)
+   - On client disconnect (`req.on('close')`): clean up the subscription
+   - Send keepalive comment every 15 seconds: `": keepalive\n\n"`
+
+2. In `backend/src/services/eval.service.ts`, add a simple in-process event emitter:
+   - `import { EventEmitter } from 'events'`
+   - `export const evalEvents = new EventEmitter()`
+   - After each stage completes, emit: `evalEvents.emit(evalId, { stage: 1, status: 'complete', score: ... })`
+   - The SSE route handler subscribes to `evalEvents` on the eval's ID and forwards events to the client
+
+3. SSE event format — send as:
+   ```
+   data: {"stage":1,"status":"complete","score":0.82,"label":"Structural analysis"}\n\n
+   data: {"stage":2,"status":"running","label":"Code review"}\n\n
+   data: {"stage":"final","status":"complete","passed":true,"score":0.78}\n\n
+   ```
+
+### Frontend
+
+4. In the eval results page (`/projects/[id]`):
+   - On mount, open `new EventSource('/api/evaluations/${id}/progress', { headers: { Authorization: ... } })`
+     Note: native `EventSource` doesn't support custom headers — use `fetch` with streaming or a small
+     wrapper like `@microsoft/fetch-event-source` (check if already in package.json, else install it)
+   - Listen for messages and update a `stages` state object
+   - Render each stage as a row: pending (gray circle), running (spinner), complete (green check + score), failed (red x)
+   - Close the EventSource when the final event arrives (`stage === 'final'`)
+   - If the eval is already complete when the page loads (fetched from REST), show all stages as complete immediately — no SSE needed
+
+5. Do not remove the existing REST `GET /api/evaluations/:id` endpoint — SSE is additive.
+   The page should work (showing final state) even if SSE fails.
+
+### Validation
+
+- Submit a new project — watch the stage indicators update live without polling
+- Refresh the page on a completed eval — all stages show complete immediately from REST
+- Disconnect mid-eval (close tab) — backend logs the disconnect cleanly, no hanging listeners
+- SSE keepalive fires every 15s (check network tab)
+
+---
+
+## Phase 6 — Resend Email Notifications (3000/month free)
+
+**Goal:** Send transactional emails at key moments: eval complete, weekly progress nudge,
+credential issued.
+
+### Setup
+
+1. Add to `backend/.env.example`:
+   ```
+   RESEND_API_KEY=    # get free at resend.com — 3000 emails/month
+   FROM_EMAIL=noreply@yourdomain.com
+   ```
+
+2. `npm install resend` in `backend/`
+
+### Email service
+
+3. Create `backend/src/services/email.service.ts`:
+
+   ```typescript
+   import { Resend } from 'resend'
+   const resend = new Resend(process.env.RESEND_API_KEY)
+
+   export async function sendEvalComplete(to: string, result: { passed: boolean, score: number, portfolioUrl: string }): Promise<void>
+   export async function sendWeeklyNudge(to: string, handle: string, currentWeek: number, nextMilestone: string): Promise<void>
+   export async function sendCredentialIssued(to: string, credentialUrl: string, projectTitle: string): Promise<void>
+   ```
+
+   - Each function builds a simple HTML email (inline styles only, no external CSS)
+   - If `RESEND_API_KEY` is not set, log a warning and return silently — never throw
+   - Log email type, recipient (hashed for privacy), and Resend message ID on success
+
+4. Wire up:
+   - In `eval.service.ts`, after Stage 4 synthesis completes: call `sendEvalComplete()`
+   - In `eval.service.ts`, after an HMAC credential is issued: call `sendCredentialIssued()`
+   - For weekly nudges: add a simple cron job in `backend/src/jobs/weekly-nudge.ts` using `node-cron`
+     (`npm install node-cron @types/node-cron`) — runs every Monday 9am UTC, queries users
+     who have an active path and haven't logged progress in 7+ days, sends nudge email
+
+### Validation
+
+- Complete an eval — email arrives at the user's address within 30 seconds
+- `RESEND_API_KEY` not set — no crash, warning logged, eval still completes
+- Weekly cron fires on schedule (test by temporarily setting interval to every minute)
+
+---
+
+## General rules for all phases
+
+- **Never break existing routes or services.** All new integrations are additive.
+- **All new env vars must have a missing-key guard** — if a key is absent, the feature degrades gracefully; the core flow never crashes.
+- **Follow the existing logging pattern** — use Pino structured logs everywhere. Log provider name, model (if applicable), latency, and any fallback that was triggered.
+- **Follow the existing error handling pattern** — look at how `eval.service.ts` handles LLM errors and mirror it.
+- **TypeScript strict mode** — no `any` types. Define interfaces for all new data shapes.
+- **Every new route needs Zod validation** on its inputs — look at existing routes for the pattern.
+- **Update `.env.example`** with every new key before closing each phase.
+- **Do not add any paid-tier-only dependencies.** Every API used here has a functional free tier sufficient for hackathon-scale usage.
+- After completing all phases, run the full TypeScript build (`tsc --noEmit`) and confirm zero errors.

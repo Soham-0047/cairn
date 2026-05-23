@@ -3,6 +3,8 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { customAlphabet } from "nanoid";
 import { User } from "../models/User.js";
+import { Path } from "../models/Path.js";
+import { Evaluation } from "../models/Evaluation.js";
 import { env } from "../config/env.js";
 import { requireUser, type AuthedRequest } from "../middleware/auth.js";
 import { getOrCreateSiteConfig } from "../models/SiteConfig.js";
@@ -90,6 +92,91 @@ router.get("/me", requireUser, async (req: AuthedRequest, res) => {
     isGuest: user.isGuest,
     guestExpiresAt: user.guestExpiresAt,
   });
+});
+
+/**
+ * Aggregated stats for the dashboard header: XP, streak, and counts.
+ * XP = 100 per completed milestone + 200 per passed evaluation
+ *    + bonus = round(finalScore * 100) per complete evaluation.
+ */
+router.get("/me/stats", requireUser, async (req: AuthedRequest, res) => {
+  const userId = req.userId;
+  const [user, activePath, evals] = await Promise.all([
+    User.findById(userId).lean(),
+    Path.findOne({ userId, status: "active" }).sort({ createdAt: -1 }).lean(),
+    Evaluation.find({ userId }).sort({ createdAt: -1 }).lean(),
+  ]);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const completedMilestones = (activePath?.phases || []).reduce(
+    (acc, p) => acc + p.milestones.filter((m) => m.status === "done").length,
+    0,
+  );
+  const totalMilestones = (activePath?.phases || []).reduce(
+    (acc, p) => acc + p.milestones.length,
+    0,
+  );
+  const passedEvals = evals.filter((e) => e.passed && e.status === "complete").length;
+  const completeEvals = evals.filter((e) => e.status === "complete");
+  const evalBonus = completeEvals.reduce(
+    (acc, e) => acc + Math.round((e.finalScore || 0) * 100),
+    0,
+  );
+  const xp = completedMilestones * 100 + passedEvals * 200 + evalBonus;
+
+  res.json({
+    xp,
+    streak: user.streak || 0,
+    completedMilestones,
+    totalMilestones,
+    passedEvals,
+    totalEvals: evals.length,
+  });
+});
+
+/**
+ * Notification feed — recent evaluations + milestone events.
+ * Returns most recent 20 items sorted by createdAt desc.
+ */
+router.get("/me/notifications", requireUser, async (req: AuthedRequest, res) => {
+  const userId = req.userId;
+  const evals = await Evaluation.find({ userId })
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .lean();
+
+  const items = evals.map((e) => {
+    let kind: "success" | "warning" | "info" | "error" = "info";
+    let title = "";
+    let body = "";
+    if (e.status === "complete" && e.passed) {
+      kind = "success";
+      title = `Verified: ${e.projectTitle || "project"}`;
+      body = `Scored ${Math.round((e.finalScore || 0) * 100)}/100. Credential minted.`;
+    } else if (e.status === "complete" && !e.passed) {
+      kind = "warning";
+      title = `Needs work: ${e.projectTitle || "project"}`;
+      body = `Scored ${Math.round((e.finalScore || 0) * 100)}/100 — below threshold.`;
+    } else if (e.status === "failed") {
+      kind = "error";
+      title = `Evaluation failed: ${e.projectTitle || "project"}`;
+      body = e.error || "Something went wrong during evaluation.";
+    } else {
+      kind = "info";
+      title = `Evaluating: ${e.projectTitle || "project"}`;
+      body = `Status: ${e.status}`;
+    }
+    return {
+      id: String(e._id),
+      kind,
+      title,
+      body,
+      href: `/projects/${String(e._id)}`,
+      createdAt: e.createdAt,
+    };
+  });
+
+  res.json({ items, unread: items.length });
 });
 
 const updateMeSchema = z.object({
