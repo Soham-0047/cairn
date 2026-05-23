@@ -45,9 +45,12 @@ export default function NewProjectPage() {
       <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div className="card-elev" style={{ padding: 36, maxWidth: 420, textAlign: "center" }}>
           <h1 className="serif" style={{ fontSize: 28, margin: 0, letterSpacing: "-.02em" }}>Sign in to submit</h1>
-          <div style={{ marginTop: 18 }}>
+          <div style={{ marginTop: 18, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
             <MagneticButton onClick={() => signIn("github")}>
-              <Icon name="github" size={14} /> Sign in with GitHub
+              <Icon name="github" size={14} /> GitHub
+            </MagneticButton>
+            <MagneticButton variant="ghost" onClick={() => signIn("google")}>
+              <Icon name="google" size={14} /> Google
             </MagneticButton>
           </div>
         </div>
@@ -134,7 +137,12 @@ export default function NewProjectPage() {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg-0)" }}>
-      <Sidebar active="projects-new" userName={userName} userEmail={session?.user?.email || (isGuest ? "guest mode" : undefined)} />
+      <Sidebar
+        active="projects-new"
+        userName={userName}
+        userEmail={session?.user?.email || (isGuest ? "guest mode" : undefined)}
+        userHandle={session?.user?.handle || guestMeta?.handle}
+      />
       <main style={{ flex: 1, minWidth: 0 }}>
         <GuestBanner />
         <Topbar

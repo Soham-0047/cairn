@@ -89,6 +89,33 @@ export const Icon = ({ name, size = 18, stroke = 1.5, style, className }: IconPr
           <path d="m20 20-3.5-3.5" />
         </svg>
       );
+    case "google":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} style={style}>
+          <path
+            d="M21.6 12.227c0-.708-.064-1.39-.182-2.045H12v3.868h5.382a4.605 4.605 0 0 1-1.996 3.018v2.51h3.232c1.891-1.741 2.982-4.305 2.982-7.351Z"
+            fill="#4285F4"
+          />
+          <path
+            d="M12 22c2.7 0 4.964-.895 6.618-2.422l-3.232-2.51c-.895.6-2.04.955-3.386.955-2.605 0-4.81-1.76-5.596-4.123H2.064v2.59A9.997 9.997 0 0 0 12 22Z"
+            fill="#34A853"
+          />
+          <path
+            d="M6.404 13.9a6.005 6.005 0 0 1 0-3.8V7.51H2.064a9.997 9.997 0 0 0 0 8.98l4.34-2.59Z"
+            fill="#FBBC05"
+          />
+          <path
+            d="M12 5.977c1.468 0 2.786.505 3.823 1.496l2.868-2.868C16.96 2.99 14.696 2 12 2A9.997 9.997 0 0 0 2.064 7.51l4.34 2.59C7.19 7.737 9.395 5.977 12 5.977Z"
+            fill="#EA4335"
+          />
+        </svg>
+      );
+    case "bell-off":
+      return (
+        <svg {...common}>
+          <path d="M9.5 4.5A6 6 0 0 1 18 10v4l1.5 2H14M6 8v2l-2 4h9M2 2l20 20M10 19a2 2 0 0 0 4 0" />
+        </svg>
+      );
     case "github":
       return (
         <svg {...common}>

@@ -182,14 +182,20 @@ export function PortfolioView({ data, example = false }: { data: PortfolioData; 
               <div style={{ marginTop: 24, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <MagneticButton
                   onClick={() => {
-                    toast.push("Profile link copied", "success");
                     if (typeof window !== "undefined") navigator.clipboard.writeText(window.location.href);
+                    toast.push("Portfolio link copied", "success");
                   }}
                 >
-                  <Icon name="mail" size={14} /> Hire me
+                  <Icon name="copy" size={14} /> Share portfolio
                 </MagneticButton>
                 {data.profile.githubUsername && (
-                  <a className="pill" href={`https://github.com/${data.profile.githubUsername}`} target="_blank" rel="noopener noreferrer">
+                  <a
+                    className="pill"
+                    href={`https://github.com/${data.profile.githubUsername}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ padding: "8px 12px" }}
+                  >
                     <Icon name="github" size={12} /> {data.profile.githubUsername}
                   </a>
                 )}
@@ -259,8 +265,14 @@ export function PortfolioView({ data, example = false }: { data: PortfolioData; 
             </span>
           </div>
           {data.projects.length === 0 ? (
-            <div className="card" style={{ padding: 28, textAlign: "center", color: "var(--text-mid)" }}>
-              No verified projects yet.
+            <div className="card" style={{ padding: 40, textAlign: "center" }}>
+              <Icon name="cube" size={28} style={{ color: "var(--text-mid)", marginBottom: 10 }} />
+              <h3 className="serif" style={{ fontSize: 24, margin: "8px 0", letterSpacing: "-.02em" }}>
+                No verified projects <i>yet</i>.
+              </h3>
+              <p style={{ color: "var(--text-mid)", fontSize: 14, maxWidth: 380, margin: "0 auto" }}>
+                Ship a project, run it through evaluation, and it lands here with a verified credential.
+              </p>
             </div>
           ) : (
             <div className="cred-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }}>
@@ -323,20 +335,51 @@ export function PortfolioView({ data, example = false }: { data: PortfolioData; 
                       </div>
                     </div>
                     <div style={{ padding: 16 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <h3 className="serif" style={{ fontSize: 20, margin: 0, letterSpacing: "-.02em" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <h3
+                          className="serif"
+                          style={{
+                            fontSize: 20,
+                            margin: 0,
+                            letterSpacing: "-.02em",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
                           {p.title}
                         </h3>
-                        <span className="mono" style={{ fontSize: 11, color: "var(--text-mid)" }}>
+                        <span className="mono" style={{ fontSize: 11, color: "var(--text-mid)", flexShrink: 0 }}>
                           {new Date(p.evaluatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                         </span>
                       </div>
+                      {p.strengths?.[0] && (
+                        <p
+                          style={{
+                            fontSize: 13,
+                            color: "var(--text-mid)",
+                            marginTop: 6,
+                            lineHeight: 1.5,
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {p.strengths[0]}
+                        </p>
+                      )}
                       <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                        {p.skills.slice(0, 4).map((t) => (
+                        {p.skills.slice(0, 3).map((t) => (
                           <span key={t} className="pill" style={{ fontSize: 10 }}>
                             {t}
                           </span>
                         ))}
+                        {p.skills.length > 3 && (
+                          <span className="pill" style={{ fontSize: 10, color: "var(--text-mid)" }}>
+                            +{p.skills.length - 3}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </article>
@@ -482,6 +525,36 @@ export function PortfolioView({ data, example = false }: { data: PortfolioData; 
                   </div>
                 ) : null}
               </div>
+            </div>
+            <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <MagneticButton
+                onClick={() => {
+                  if (typeof window !== "undefined") window.open(activeProject.repoUrl, "_blank");
+                }}
+              >
+                <Icon name="github" size={14} /> Open repo
+              </MagneticButton>
+              <MagneticButton
+                variant="ghost"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    navigator.clipboard.writeText(activeProject.repoUrl);
+                    toast.push("Repo link copied", "success");
+                  }
+                }}
+              >
+                <Icon name="copy" size={14} /> Copy repo link
+              </MagneticButton>
+              <span
+                className="pill"
+                style={{
+                  marginLeft: "auto",
+                  color: activeProject.score >= 0.9 ? "#6ee7b7" : "#a5b4fc",
+                  fontSize: 12,
+                }}
+              >
+                Score · {Math.round(activeProject.score * 100)}/100
+              </span>
             </div>
           </div>
         )}

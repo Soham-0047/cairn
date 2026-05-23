@@ -63,12 +63,42 @@ export const TopNav = () => {
               Sign out
             </button>
           ) : (
-            <button
-              onClick={() => signIn("github")}
-              style={{ background: "none", border: "none", fontSize: 14, color: "var(--text-mid)", cursor: "pointer" }}
-            >
-              Sign in
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => signIn("github")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: 14,
+                  color: "var(--text-mid)",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+                title="Sign in with GitHub"
+              >
+                <Icon name="github" size={14} /> Sign in
+              </button>
+              <button
+                onClick={() => signIn("google")}
+                style={{
+                  background: "none",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "6px 10px",
+                  fontSize: 13,
+                  color: "var(--text-mid)",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+                title="Sign in with Google"
+              >
+                <Icon name="google" size={14} /> Google
+              </button>
+            </div>
           )}
           <MagneticButton href="/onboarding">
             Start your path <Icon name="arrow-right" size={14} />
@@ -85,22 +115,25 @@ export const TopNav = () => {
 };
 
 /* ------------------------ Sidebar (app shell) ------------------------ */
-type SidebarKey = "dashboard" | "projects-new" | "projects-detail" | "portfolio" | "admin";
+type SidebarKey = "dashboard" | "projects-new" | "projects-detail" | "projects-list" | "portfolio" | "settings" | "admin";
 
-export const Sidebar = ({ active, userName, userEmail, targetRole, weekProgress }: {
+export const Sidebar = ({ active, userName, userEmail, userHandle, targetRole, weekProgress }: {
   active: SidebarKey;
   userName?: string;
   userEmail?: string;
+  userHandle?: string;
   targetRole?: string;
   weekProgress?: { current: number; total: number };
 }) => {
+  const portfolioHref = userHandle ? `/u/${userHandle}` : "/example";
   const items: [SidebarKey | "home", string, string, string][] = [
     ["home", "/", "Home", "home"],
     ["dashboard", "/dashboard", "Path", "route"],
     ["projects-new", "/projects/new", "Submit", "plus"],
-    ["projects-detail", "/dashboard", "Projects", "folder"],
-    ["portfolio", "/example", "Portfolio", "user"],
-    ["admin", "/admin", "Admin", "settings"],
+    ["projects-list", "/projects", "Projects", "folder"],
+    ["portfolio", portfolioHref, "Portfolio", "user"],
+    ["settings", "/settings", "Settings", "settings"],
+    ["admin", "/admin", "Admin", "shield"],
   ];
   const pct = weekProgress ? Math.round((weekProgress.current / Math.max(1, weekProgress.total)) * 100) : 50;
   return (
@@ -205,7 +238,9 @@ export const Sidebar = ({ active, userName, userEmail, targetRole, weekProgress 
           </div>
           <div style={{ fontSize: 11, color: "var(--text-mid)" }}>{userEmail || "no signup"}</div>
         </div>
-        <Icon name="settings" size={14} style={{ color: "var(--text-mid)" }} />
+        <Link href="/settings" aria-label="Open settings" style={{ display: "flex" }}>
+          <Icon name="settings" size={14} style={{ color: "var(--text-mid)" }} />
+        </Link>
       </div>
     </aside>
   );
@@ -370,9 +405,12 @@ export const AuthRequired = ({ children, redirectTo = "/onboarding" }: { childre
           <p style={{ color: "var(--text-mid)", fontSize: 14, marginTop: 8 }}>
             Save your progress and earn verified credentials.
           </p>
-          <div style={{ marginTop: 18 }}>
+          <div style={{ marginTop: 18, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
             <MagneticButton onClick={() => signIn("github")}>
-              <Icon name="github" size={14} /> Sign in with GitHub
+              <Icon name="github" size={14} /> GitHub
+            </MagneticButton>
+            <MagneticButton variant="ghost" onClick={() => signIn("google")}>
+              <Icon name="google" size={14} /> Google
             </MagneticButton>
           </div>
         </div>

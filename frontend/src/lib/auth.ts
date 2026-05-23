@@ -1,5 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";
+import GoogleProvider from "next-auth/providers/google";
 import { backendUrl } from "./api";
 
 declare module "next-auth" {
@@ -24,6 +25,11 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GITHUB_CLIENT_SECRET || "",
       authorization: { params: { scope: "read:user user:email public_repo" } },
     }),
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      authorization: { params: { scope: "openid email profile" } },
+    }),
   ],
   session: { strategy: "jwt" },
   secret: process.env.NEXTAUTH_SECRET,
@@ -32,15 +38,24 @@ export const authOptions: NextAuthOptions = {
       // After GitHub login, exchange with our backend for a Cairn JWT.
       if (account && profile) {
         try {
+          const isGoogle = account.provider === "google";
+          const p = profile as {
+            avatar_url?: string;
+            picture?: string;
+            login?: string;
+            email?: string;
+            name?: string;
+          };
           const res = await fetch(`${backendUrl()}/api/auth/exchange`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              email: token.email || profile.email,
-              name: token.name || profile.name,
-              avatarUrl: (profile as { avatar_url?: string }).avatar_url || token.picture,
-              githubUsername: (profile as { login?: string }).login || "",
-              githubAccessToken: account.access_token || "",
+              email: token.email || p.email,
+              name: token.name || p.name,
+              avatarUrl: p.avatar_url || p.picture || token.picture,
+              githubUsername: isGoogle ? "" : p.login || "",
+              githubAccessToken: isGoogle ? "" : account.access_token || "",
+              provider: account.provider,
             }),
           });
           if (res.ok) {

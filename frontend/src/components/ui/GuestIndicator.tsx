@@ -62,6 +62,14 @@ export function GuestBanner() {
       >
         <Icon name="github" size={13} /> Sign in to save
       </button>
+      <button
+        onClick={() => signIn("google")}
+        className="btn-magnetic btn-ghost"
+        style={{ padding: "8px 12px", fontSize: 13 }}
+        title="Sign in with Google"
+      >
+        <Icon name="google" size={13} /> Google
+      </button>
     </div>
   );
 }

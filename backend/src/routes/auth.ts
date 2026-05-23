@@ -86,8 +86,72 @@ router.get("/me", requireUser, async (req: AuthedRequest, res) => {
     githubUsername: user.githubUsername,
     profile: user.profile,
     streak: user.streak,
+    timezone: user.timezone,
     isGuest: user.isGuest,
     guestExpiresAt: user.guestExpiresAt,
+  });
+});
+
+const updateMeSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  handle: z
+    .string()
+    .min(2)
+    .max(40)
+    .regex(/^[a-z0-9-]+$/, "Lowercase letters, digits and dashes only")
+    .optional(),
+  avatarUrl: z.string().url().or(z.literal("")).optional(),
+  timezone: z.string().max(60).optional(),
+  profile: z
+    .object({
+      targetRole: z.string().max(140).optional(),
+      background: z.string().max(2000).optional(),
+      weeklyHours: z.number().int().min(1).max(80).optional(),
+      timelineWeeks: z.number().int().min(2).max(52).optional(),
+    })
+    .partial()
+    .optional(),
+});
+
+router.patch("/me", requireUser, async (req: AuthedRequest, res) => {
+  const parse = updateMeSchema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({ error: parse.error.flatten().fieldErrors });
+  }
+  const user = await User.findById(req.userId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  if (user.isGuest) {
+    return res.status(403).json({ error: "Guests cannot update profile. Sign in to save changes." });
+  }
+
+  const { handle, name, avatarUrl, timezone, profile } = parse.data;
+
+  if (handle && handle !== user.handle) {
+    const exists = await User.findOne({ handle, _id: { $ne: user._id } }).lean();
+    if (exists) return res.status(409).json({ error: "That handle is taken." });
+    user.handle = handle;
+  }
+  if (typeof name === "string") user.name = name;
+  if (typeof avatarUrl === "string") user.avatarUrl = avatarUrl;
+  if (typeof timezone === "string") user.timezone = timezone;
+  if (profile) {
+    user.profile = {
+      ...user.profile,
+      ...profile,
+    } as typeof user.profile;
+  }
+  await user.save();
+
+  res.json({
+    id: String(user._id),
+    email: user.email,
+    name: user.name,
+    handle: user.handle,
+    avatarUrl: user.avatarUrl,
+    githubUsername: user.githubUsername,
+    profile: user.profile,
+    timezone: user.timezone,
+    onboarded: user.onboarded,
   });
 });
 

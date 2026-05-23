@@ -83,9 +83,12 @@ export default function DashboardPage() {
         <div className="card-elev" style={{ padding: 36, maxWidth: 420, textAlign: "center" }}>
           <h1 className="serif" style={{ fontSize: 28, margin: 0, letterSpacing: "-.02em" }}>Please sign in</h1>
           <p style={{ color: "var(--text-mid)", fontSize: 14, marginTop: 8 }}>Sign in with GitHub to view your dashboard.</p>
-          <div style={{ marginTop: 18 }}>
+          <div style={{ marginTop: 18, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
             <MagneticButton onClick={() => signIn("github")}>
-              <Icon name="github" size={14} /> Sign in with GitHub
+              <Icon name="github" size={14} /> GitHub
+            </MagneticButton>
+            <MagneticButton variant="ghost" onClick={() => signIn("google")}>
+              <Icon name="google" size={14} /> Google
             </MagneticButton>
           </div>
         </div>
@@ -145,6 +148,7 @@ export default function DashboardPage() {
         active="dashboard"
         userName={userName}
         userEmail={userEmail || undefined}
+        userHandle={session?.user?.handle || guestMeta?.handle}
         targetRole={path.targetRole}
         weekProgress={{ current: currentWeek, total: path.timelineWeeks || total }}
       />
