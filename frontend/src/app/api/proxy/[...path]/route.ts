@@ -31,14 +31,27 @@ async function forward(req: NextRequest, segments: string[]) {
     init.body = await req.text();
   }
 
-  const res = await fetch(url, init);
-  const body = await res.text();
-  return new NextResponse(body, {
-    status: res.status,
-    headers: {
-      "Content-Type": res.headers.get("content-type") || "application/json",
-    },
-  });
+  try {
+    const res = await fetch(url, init);
+    const body = await res.text();
+    return new NextResponse(body, {
+      status: res.status,
+      headers: {
+        "Content-Type": res.headers.get("content-type") || "application/json",
+      },
+    });
+  } catch (err) {
+    // Network / DNS / refused-connection errors land here. Surface them so the
+    // client can show something more useful than a generic 500.
+    return NextResponse.json(
+      {
+        error: "Backend unreachable",
+        message: err instanceof Error ? err.message : "fetch failed",
+        hint: `Could not reach ${backendUrl()}. Is the backend running, and is BACKEND_URL set correctly?`,
+      },
+      { status: 502 },
+    );
+  }
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {

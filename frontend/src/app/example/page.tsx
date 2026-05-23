@@ -1,159 +1,96 @@
-import Link from "next/link";
-import { Award, CheckCircle2, Cpu, Github, ShieldCheck } from "lucide-react";
-import { getSiteConfig } from "@/lib/config";
+import { PortfolioView, type PortfolioData } from "@/components/ui/PortfolioView";
 
-export default async function ExamplePage() {
-  const cfg = await getSiteConfig();
-  return (
-    <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
-      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Example portfolio · demo</p>
-      <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-900">Priya Nair</h1>
-      <p className="mt-1 text-zinc-600">Becoming an AI engineer · 8 weeks in</p>
+const EXAMPLE: PortfolioData = {
+  profile: {
+    handle: "mira-k",
+    name: "Mira Khatri",
+    targetRole: "AI Engineer — career-switching from frontend",
+    location: "Bangalore",
+    githubUsername: "mirak",
+  },
+  activePath: {
+    targetRole: "AI Engineer",
+    summary: "From Python basics to deploying a multimodal RAG agent with verified evals.",
+    phaseCount: 3,
+    completedMilestones: 12,
+    totalMilestones: 12,
+    generatedBy: { provider: "google", model: "gemma-4-27b" },
+  },
+  projects: [
+    {
+      id: "p1",
+      title: "Codex Studio",
+      repoUrl: "https://github.com/mirak/codex-studio",
+      score: 0.92,
+      strengths: ["Clean agent loop", "Streaming with async generators", "Solid tests on core paths"],
+      skills: ["Agents", "RAG", "Streaming"],
+      models: [
+        { stage: "code", provider: "google", model: "gemma-4-27b" },
+        { stage: "visual", provider: "google", model: "gemma-4-12b" },
+      ],
+      evaluatedAt: "2026-04-10T10:00:00.000Z",
+    },
+    {
+      id: "p2",
+      title: "NoteShelf",
+      repoUrl: "https://github.com/mirak/noteshelf",
+      score: 0.88,
+      strengths: ["Type-safe tRPC layer", "Composed query hooks", "Postgres migrations clean"],
+      skills: ["Next.js", "tRPC", "Postgres"],
+      models: [{ stage: "code", provider: "google", model: "gemma-4-27b" }],
+      evaluatedAt: "2026-03-22T10:00:00.000Z",
+    },
+    {
+      id: "p3",
+      title: "Echo Buddy",
+      repoUrl: "https://github.com/mirak/echo-buddy",
+      score: 0.81,
+      strengths: ["Sub-500ms voice round-trips", "Clean tool-call shape"],
+      skills: ["Whisper", "ElevenLabs", "Realtime"],
+      models: [{ stage: "code", provider: "google", model: "gemma-4-27b" }],
+      evaluatedAt: "2026-03-08T10:00:00.000Z",
+    },
+    {
+      id: "p4",
+      title: "PaperCanvas",
+      repoUrl: "https://github.com/mirak/papercanvas",
+      score: 0.95,
+      strengths: ["Custom GLSL noise shader", "Hardware-accelerated render path"],
+      skills: ["Three.js", "GLSL", "Shaders"],
+      models: [{ stage: "code", provider: "google", model: "gemma-4-27b" }],
+      evaluatedAt: "2026-04-01T10:00:00.000Z",
+    },
+    {
+      id: "p5",
+      title: "EvalKit",
+      repoUrl: "https://github.com/mirak/evalkit",
+      score: 0.84,
+      strengths: ["Reproducible eval harness", "Three datasets bundled"],
+      skills: ["Python", "Datasets"],
+      models: [{ stage: "code", provider: "google", model: "gemma-4-27b" }],
+      evaluatedAt: "2026-02-28T10:00:00.000Z",
+    },
+    {
+      id: "p6",
+      title: "Mini-GPT",
+      repoUrl: "https://github.com/mirak/mini-gpt",
+      score: 0.79,
+      strengths: ["Hand-rolled attention", "1M params, trains in 4 minutes"],
+      skills: ["PyTorch", "Attention"],
+      models: [{ stage: "code", provider: "google", model: "gemma-4-27b" }],
+      evaluatedAt: "2026-02-12T10:00:00.000Z",
+    },
+  ],
+  credentials: [
+    { id: "c1", type: "project", title: "Codex Studio", skills: ["Agents", "RAG"], issuedAt: "2026-04-10T10:00:00.000Z", signature: "e3b0c4..." },
+    { id: "c2", type: "project", title: "NoteShelf", skills: ["Next.js", "tRPC"], issuedAt: "2026-03-22T10:00:00.000Z", signature: "a1b2c3..." },
+    { id: "c3", type: "project", title: "Echo Buddy", skills: ["Whisper"], issuedAt: "2026-03-08T10:00:00.000Z", signature: "d4e5f6..." },
+    { id: "c4", type: "project", title: "PaperCanvas", skills: ["Three.js"], issuedAt: "2026-04-01T10:00:00.000Z", signature: "g7h8i9..." },
+    { id: "c5", type: "project", title: "EvalKit", skills: ["Python"], issuedAt: "2026-02-28T10:00:00.000Z", signature: "j0k1l2..." },
+    { id: "c6", type: "project", title: "Mini-GPT", skills: ["PyTorch"], issuedAt: "2026-02-12T10:00:00.000Z", signature: "m3n4o5..." },
+  ],
+};
 
-      <div className="mt-2 inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold text-white" style={{ backgroundColor: cfg.brand.primaryColor }}>
-        <ShieldCheck className="h-3.5 w-3.5" /> Verified on {cfg.brand.name}
-      </div>
-
-      <section className="mt-10 card">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Path progress</h2>
-        <h3 className="mt-2 text-xl font-semibold text-zinc-900">AI Engineer · 12 weeks</h3>
-        <p className="mt-1 text-zinc-600">From Python basics to deploying a RAG-powered chatbot.</p>
-        <p className="mt-3 text-sm text-zinc-500">
-          21 / 36 milestones complete · 4 phases ·{" "}
-          <span className="inline-flex items-center gap-1">
-            <Cpu className="h-3.5 w-3.5" /> generated by gemma-3-27b-it
-          </span>
-        </p>
-      </section>
-
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Verified projects</h2>
-        <div className="mt-3 space-y-4">
-          <Project
-            title="Course notes RAG bot"
-            repo="priya/notes-rag"
-            score={0.86}
-            skills={["python", "langchain", "retrieval", "fastapi", "chromadb"]}
-            strengths={[
-              "Clean separation of retrieval, chunking, and inference layers",
-              "Includes evaluation set + benchmark notebook",
-              "Original chunking heuristics, not a tutorial clone",
-            ]}
-            models={["gemma-3-27b-it", "gemma-3-12b-it"]}
-          />
-          <Project
-            title="Bird species classifier (CNN)"
-            repo="priya/birdspot"
-            score={0.78}
-            skills={["pytorch", "computer-vision", "data-augmentation"]}
-            strengths={[
-              "Trained from scratch on a 5k-sample subset",
-              "Custom data augmentation pipeline with verified accuracy gain",
-            ]}
-            models={["gemma-3-27b-it"]}
-          />
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Credentials</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Credential title="Course notes RAG bot" skills={["python", "langchain"]} />
-          <Credential title="Bird species classifier" skills={["pytorch", "cv"]} />
-          <Credential title="Python deep-dive (89% quiz mastery)" skills={["python"]} type="quiz_mastery" />
-          <Credential title="ML fundamentals milestone" skills={["ml"]} type="milestone" />
-        </div>
-      </section>
-
-      <div className="mt-12 rounded-xl border border-zinc-200 bg-zinc-50 p-6 text-center">
-        <p className="text-sm text-zinc-600">
-          This is an example.{" "}
-          <Link href="/onboarding" className="font-semibold text-zinc-900 underline">
-            Start your own path
-          </Link>
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function Project({
-  title,
-  repo,
-  score,
-  skills,
-  strengths,
-  models,
-}: {
-  title: string;
-  repo: string;
-  score: number;
-  skills: string[];
-  strengths: string[];
-  models: string[];
-}) {
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-zinc-900">{title}</h3>
-        <span className="text-sm font-medium text-emerald-700">{Math.round(score * 100)}%</span>
-      </div>
-      <p className="mt-1 inline-flex items-center gap-1 text-sm text-zinc-600">
-        <Github className="h-3.5 w-3.5" /> {repo}
-      </p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {skills.map((s) => (
-          <span key={s} className="badge-neutral">
-            {s}
-          </span>
-        ))}
-      </div>
-      <ul className="mt-3 space-y-1 text-sm text-zinc-600">
-        {strengths.map((s, i) => (
-          <li key={i}>
-            <CheckCircle2 className="mr-1 inline h-3.5 w-3.5 text-emerald-600" />
-            {s}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-3 text-xs text-zinc-400">
-        Evaluated by:{" "}
-        {models.map((m, i) => (
-          <span key={i} className="font-mono">
-            {i > 0 ? ", " : ""}
-            {m}
-          </span>
-        ))}
-      </p>
-    </div>
-  );
-}
-
-function Credential({
-  title,
-  skills,
-  type = "project",
-}: {
-  title: string;
-  skills: string[];
-  type?: string;
-}) {
-  return (
-    <div className="card !p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{type}</p>
-          <p className="mt-1 font-semibold text-zinc-900">{title}</p>
-        </div>
-        <Award className="h-5 w-5 text-amber-500" />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1">
-        {skills.map((s) => (
-          <span key={s} className="badge-neutral">
-            {s}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
+export default function ExamplePage() {
+  return <PortfolioView data={EXAMPLE} example />;
 }

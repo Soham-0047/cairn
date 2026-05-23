@@ -2,9 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { getSiteConfig } from "@/lib/config";
 import { Providers } from "@/components/Providers";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
-import { GuestBanner } from "@/components/GuestBanner";
+import { ToastProvider } from "@/components/ui/primitives";
 
 export async function generateMetadata(): Promise<Metadata> {
   const cfg = await getSiteConfig();
@@ -21,18 +19,21 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const cfg = await getSiteConfig();
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark">
       <head>
-        <style>{`:root { --brand-primary: ${cfg.brand.primaryColor}; --brand-accent: ${cfg.brand.accentColor}; }`}</style>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+          rel="stylesheet"
+        />
       </head>
       <body>
         <Providers>
-          <Header config={cfg} />
-          <GuestBanner bannerText={cfg.guestMode?.bannerText} />
-          <main className="min-h-[calc(100vh-8rem)]">{children}</main>
-          <Footer config={cfg} />
+          <ToastProvider>
+            <main>{children}</main>
+          </ToastProvider>
         </Providers>
       </body>
     </html>
