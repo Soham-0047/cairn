@@ -1,0 +1,93 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { backendUrl } from "@/lib/api";
+
+/**
+ * Authenticated proxy. Prefers NextAuth session token; falls back to the
+ * X-Guest-Token header set by the browser for guest mode.
+ *
+ * GET  /api/proxy/paths/active  -> backend GET /api/paths/active
+ */
+async function forward(req: NextRequest, segments: string[]) {
+  const session = await getServerSession(authOptions);
+  const guestToken = req.headers.get("x-guest-token");
+  const token = session?.backendToken || guestToken;
+  if (!token) {
+    return NextResponse.json({ error: "Not signed in (and no guest session)" }, { status: 401 });
+  }
+
+  const path = "/api/" + segments.join("/");
+  const url = `${backendUrl()}${path}${req.nextUrl.search}`;
+
+  const incomingType = req.headers.get("content-type") || "";
+  const isMultipart = incomingType.startsWith("multipart/");
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+  // For multipart we must preserve the original content-type (including the
+  // boundary param) and forward the raw bytes. For JSON we set our own.
+  if (isMultipart) {
+    headers["Content-Type"] = incomingType;
+  } else {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const init: RequestInit = { method: req.method, headers };
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    init.body = isMultipart
+      ? Buffer.from(await req.arrayBuffer())
+      : await req.text();
+  }
+
+  try {
+    const res = await fetch(url, init);
+    const contentType = res.headers.get("content-type") || "application/json";
+    // Stream SSE responses straight through so progress events arrive in real
+    // time (calling .text() would buffer the whole stream).
+    if (contentType.includes("text/event-stream") && res.body) {
+      return new NextResponse(res.body, {
+        status: res.status,
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
+    const body = await res.text();
+    return new NextResponse(body, {
+      status: res.status,
+      headers: { "Content-Type": contentType },
+    });
+  } catch (err) {
+    // Network / DNS / refused-connection errors land here. Surface them so the
+    // client can show something more useful than a generic 500.
+    return NextResponse.json(
+      {
+        error: "Backend unreachable",
+        message: err instanceof Error ? err.message : "fetch failed",
+        hint: `Could not reach ${backendUrl()}. Is the backend running, and is BACKEND_URL set correctly?`,
+      },
+      { status: 502 },
+    );
+  }
+}
+
+export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  const { path } = await ctx.params;
+  return forward(req, path);
+}
+export async function POST(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  const { path } = await ctx.params;
+  return forward(req, path);
+}
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  const { path } = await ctx.params;
+  return forward(req, path);
+}
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  const { path } = await ctx.params;
+  return forward(req, path);
+}
