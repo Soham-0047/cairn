@@ -121,13 +121,14 @@ export default function OnboardingPage() {
     setError(null);
     setGenerating(true);
     try {
+      // SSE so heartbeats keep the Netlify proxy alive while the LLM chain runs.
       const res = await proxyFetch("/paths", {
         method: "POST",
+        headers: { Accept: "text/event-stream" },
         body: JSON.stringify({ goal }),
       });
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
         const body: PathError = await res.json().catch(() => ({}));
-        // Pass through the structured error so the UI can show provider trace + hint
         setError({
           error: body.error || `Backend returned ${res.status}`,
           message: body.message,
@@ -137,7 +138,41 @@ export default function OnboardingPage() {
         setGenerating(false);
         return;
       }
-      // Let the generating scene play, then route
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalErr: PathError | null = null;
+      let done = false;
+      while (!done) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        // SSE events are separated by a blank line
+        let idx: number;
+        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+          const raw = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          let event = "message";
+          let data = "";
+          for (const line of raw.split("\n")) {
+            if (line.startsWith(":")) continue; // heartbeat comment
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            else if (line.startsWith("data:")) data += line.slice(5).trim();
+          }
+          if (event === "done") {
+            done = true;
+          } else if (event === "error") {
+            try { finalErr = JSON.parse(data) as PathError; }
+            catch { finalErr = { error: "Path generation failed" }; }
+            done = true;
+          }
+        }
+      }
+      if (finalErr) {
+        setError(finalErr);
+        setGenerating(false);
+        return;
+      }
       setTimeout(() => router.push("/dashboard"), 1200);
     } catch (e) {
       setError({

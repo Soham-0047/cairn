@@ -9,8 +9,10 @@ function hashKey(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 32);
 }
 
+const EMBED_MODEL = "gemini-embedding-001";
+
 /**
- * Get a 768-dim embedding from Google `text-embedding-004`.
+ * Get an embedding from Google `gemini-embedding-001` (current GA model).
  * Results are cached in-process by SHA-256(text) — paths don't change once written.
  * Throws if `GOOGLE_AI_API_KEY` is missing or the API call fails.
  */
@@ -23,13 +25,16 @@ export async function embedText(text: string): Promise<number[]> {
   if (cached) return cached;
 
   const start = Date.now();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${env.GOOGLE_AI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${env.GOOGLE_AI_API_KEY}`;
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "models/text-embedding-004",
+      model: `models/${EMBED_MODEL}`,
       content: { parts: [{ text }] },
+      // Match the 768-dim Qdrant collection. gemini-embedding-001 defaults
+      // to 3072; passing outputDimensionality keeps existing collections valid.
+      outputDimensionality: 768,
     }),
   });
   if (!resp.ok) {
@@ -48,7 +53,7 @@ export async function embedText(text: string): Promise<number[]> {
   cache.set(key, values);
   logger.info(
     {
-      model: "text-embedding-004",
+      model: EMBED_MODEL,
       inputLen: text.length,
       dims: values.length,
       latencyMs: Date.now() - start,

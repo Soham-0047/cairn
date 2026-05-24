@@ -30,34 +30,80 @@ router.post("/", requireUser, checkGuestLimit("path"), async (req: AuthedRequest
   const parse = schema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
 
+  // Stream as SSE so the response starts flowing immediately. This is what
+  // keeps Netlify Functions from timing out the proxy after ~26s while the
+  // LLM chain churns through its options — every heartbeat is a write,
+  // which resets the upstream idle timer and prevents a 502.
+  const wantsSSE = (req.headers.accept || "").includes("text/event-stream");
+  if (!wantsSSE) {
+    // Legacy JSON path kept for non-browser callers (curl, server-side tests).
+    try {
+      await Path.updateMany(
+        { userId: req.userId, status: "active" },
+        { $set: { status: "abandoned" } },
+      );
+      const path = await generatePath({ userId: req.userId!, goal: parse.data.goal });
+      return res.json(path);
+    } catch (err) {
+      logger.error({ err }, "path generation failed");
+      if (err instanceof LLMChainError) {
+        return res.status(502).json({
+          error: "Path generation failed",
+          message: err.message,
+          trace: err.trace,
+          hint: "Open /admin/credentials to verify keys, or /admin/providers to edit the routing chain.",
+        });
+      }
+      return res.status(502).json({
+        error: "Path generation failed",
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }
+
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  const send = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  // SSE comment heartbeats every 5s — bytes on the wire keep intermediaries
+  // (Netlify, Render, browser) from declaring the connection idle.
+  const heartbeat = setInterval(() => {
+    res.write(`: keep-alive ${Date.now()}\n\n`);
+  }, 5000);
+
   try {
-    // Abandon any existing active paths first
+    send("stage", { stage: "starting" });
     await Path.updateMany(
       { userId: req.userId, status: "active" },
       { $set: { status: "abandoned" } },
     );
-    const path = await generatePath({
-      userId: req.userId!,
-      goal: parse.data.goal,
-    });
-    res.json(path);
+    send("stage", { stage: "generating" });
+    const path = await generatePath({ userId: req.userId!, goal: parse.data.goal });
+    send("done", path);
   } catch (err) {
     logger.error({ err }, "path generation failed");
-    // When the LLM router exhausts its chain, include the per-attempt trace so
-    // the admin can see which provider/model failed and why without grepping
-    // server logs. Non-chain errors fall through to a plain message.
     if (err instanceof LLMChainError) {
-      return res.status(502).json({
+      send("error", {
         error: "Path generation failed",
         message: err.message,
         trace: err.trace,
         hint: "Open /admin/credentials to verify keys, or /admin/providers to edit the routing chain.",
       });
+    } else {
+      send("error", {
+        error: "Path generation failed",
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
     }
-    res.status(502).json({
-      error: "Path generation failed",
-      message: err instanceof Error ? err.message : "Unknown error",
-    });
+  } finally {
+    clearInterval(heartbeat);
+    res.end();
   }
 });
 

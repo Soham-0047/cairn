@@ -32,6 +32,9 @@ async function forward(req: NextRequest, segments: string[]) {
   } else {
     headers["Content-Type"] = "application/json";
   }
+  // Forward Accept so the backend can choose JSON vs. SSE response shape.
+  const accept = req.headers.get("accept");
+  if (accept) headers["Accept"] = accept;
 
   const init: RequestInit = { method: req.method, headers };
   if (req.method !== "GET" && req.method !== "HEAD") {

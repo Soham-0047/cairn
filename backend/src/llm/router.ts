@@ -53,17 +53,18 @@ export const DEFAULT_CHAINS: Record<TaskType, ChainEntry[]> = {
     { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
     { provider: "groq", model: "gemma2-9b-it" },
   ],
-  // Heavy reasoning + long structured output. Gemma 4 31B leads because its
-  // unlimited-TPM, 1.5K RPD quota is the only one comfortable with the large
-  // path-generation prompt; fall back to 26B (same quota), then Flash variants
-  // for JSON-mode reliability, then OpenRouter fallbacks.
+  // Lead with Flash variants — they're fast enough to fit inside Netlify's
+  // ~26s function timeout and have reliable JSON output. Gemma models go
+  // last because in practice gemma-4-31b-it has been hitting the 60s
+  // LLM_CALL_TIMEOUT_MS, which guarantees a Netlify 502 even when a later
+  // chain link eventually succeeds.
   generate_path: [
-    { provider: "google", model: "gemma-4-31b-it" },
-    { provider: "google", model: "gemma-4-26b-a4b-it" },
-    { provider: "google", model: "gemini-3.1-flash-lite" },
-    { provider: "google", model: "gemini-2.5-flash" },
     { provider: "google", model: "gemini-2.5-flash-lite" },
+    { provider: "google", model: "gemini-2.5-flash" },
+    { provider: "google", model: "gemini-3.1-flash-lite" },
     { provider: "google", model: "gemini-3.5-flash" },
+    { provider: "google", model: "gemma-4-26b-a4b-it" },
+    { provider: "google", model: "gemma-4-31b-it" },
     { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
     { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" },
     { provider: "openrouter", model: "qwen/qwen-2.5-72b-instruct:free" },
