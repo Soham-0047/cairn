@@ -183,6 +183,70 @@ Output strict JSON:
 }
 Output JSON only.`;
 
+export const INTERVIEW_TURN_PROMPT = (params: {
+  role: string;
+  level: "junior" | "mid" | "senior";
+  focus: string;
+  transcript: { role: "interviewer" | "candidate"; content: string }[];
+  turnCount: number;
+}) => {
+  const transcriptText = params.transcript
+    .map((m) => (m.role === "interviewer" ? `INTERVIEWER: ${m.content}` : `CANDIDATE: ${m.content}`))
+    .join("\n\n");
+  return `You are a senior engineer conducting a ${params.level}-level interview for the role of ${params.role}.${
+    params.focus ? ` Focus topic: ${params.focus}.` : ""
+  }
+
+Behavior rules:
+- Ask exactly ONE question or follow-up at a time. Don't bundle.
+- After the candidate answers, decide: probe deeper, ask a follow-up, or move to a new topic.
+- If the candidate is stuck, offer a small hint — never the full answer.
+- Don't be sycophantic. Mirror a real interviewer's neutral tone.
+- This is turn ${params.turnCount} of roughly 10. If you're past turn 8, start wrapping up.
+
+CONVERSATION SO FAR:
+${transcriptText || "(no exchanges yet — open with a warm but professional question relevant to the role)"}
+
+Now produce just your next message as the interviewer. No meta commentary, no JSON, no quotes around it.`;
+};
+
+export const INTERVIEW_SCORE_PROMPT = (params: {
+  role: string;
+  level: "junior" | "mid" | "senior";
+  transcript: { role: "interviewer" | "candidate"; content: string }[];
+}) => {
+  const transcriptText = params.transcript
+    .map((m) => (m.role === "interviewer" ? `INTERVIEWER: ${m.content}` : `CANDIDATE: ${m.content}`))
+    .join("\n\n");
+  return `You are evaluating a mock interview for the role of ${params.role} at the ${params.level} level.
+
+TRANSCRIPT:
+${transcriptText}
+
+Score the candidate honestly. Be critical — this is a mock interview so they want real feedback, not flattery.
+
+Output strict JSON:
+{
+  "overall": 0.0,
+  "technical": 0.0,
+  "communication": 0.0,
+  "problemSolving": 0.0,
+  "seniority": "junior|mid|senior",
+  "strengths": ["..."],
+  "improvements": ["..."],
+  "summary": "2-3 sentence overall assessment",
+  "recommendation": "strong_hire|hire|lean_hire|no_hire|strong_no_hire"
+}
+
+Scoring guidance:
+- All numeric fields are 0..1.
+- "seniority" = the level the candidate actually demonstrated, not the level you interviewed for.
+- "recommendation" = your honest call given the role.
+- Strengths and improvements should be specific, not generic.
+
+Output JSON only.`;
+};
+
 export const QUIZ_GENERATION_PROMPT = (params: { topic: string; level: 1 | 2 | 3 | 4 | 5; n: number }) => `Generate ${params.n} multiple-choice questions on "${params.topic}" at level ${params.level}/5 (1=intro, 5=senior).
 
 Output strict JSON:

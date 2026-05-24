@@ -37,7 +37,10 @@ async function ensureCollection(): Promise<void> {
   if (ensurePromise) return ensurePromise;
   const c = getClient();
   if (!c) return;
-  ensurePromise = (async () => {
+  // Build the promise eagerly so concurrent callers see a non-null
+  // `ensurePromise` and join the in-flight init instead of racing a second
+  // createCollection request.
+  const p = (async () => {
     try {
       await c.getCollection(env.QDRANT_COLLECTION);
       ensured = true;
@@ -61,7 +64,8 @@ async function ensureCollection(): Promise<void> {
       ensurePromise = null;
     }
   })();
-  return ensurePromise;
+  ensurePromise = p;
+  return p;
 }
 
 /**

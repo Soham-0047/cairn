@@ -17,6 +17,9 @@ const resourceSchema = new Schema(
 );
 
 resourceSchema.index({ topics: 1, qualityScore: -1 });
+// Path-generation always filters on `enabled` before topic match; without this
+// compound the query had to either scan disabled docs or skip the topic index.
+resourceSchema.index({ enabled: 1, topics: 1, qualityScore: -1 });
 
 export type ResourceDoc = InferSchemaType<typeof resourceSchema> & { _id: Types.ObjectId };
 

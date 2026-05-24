@@ -17,7 +17,12 @@ type LimitType = "path" | "evaluation";
 export function checkGuestLimit(type: LimitType) {
   return async function (req: AuthedRequest, res: Response, next: NextFunction) {
     if (!req.userId) return next();
-    const user = await User.findById(req.userId).select("isGuest guestExpiresAt").lean();
+    // User and SiteConfig are independent — fetch in parallel to cut one
+    // round-trip off the hot path for every guest request.
+    const [user, cfg] = await Promise.all([
+      User.findById(req.userId).select("isGuest guestExpiresAt").lean(),
+      getOrCreateSiteConfig(),
+    ]);
     if (!user) return res.status(401).json({ error: "User not found" });
     if (!user.isGuest) return next();
 
@@ -29,7 +34,6 @@ export function checkGuestLimit(type: LimitType) {
       });
     }
 
-    const cfg = await getOrCreateSiteConfig();
     const guest = cfg.guestMode;
 
     if (!guest.enabled) {
@@ -50,15 +54,20 @@ export function checkGuestLimit(type: LimitType) {
     }
 
     if (type === "evaluation") {
-      const userCount = await Evaluation.countDocuments({ userId: req.userId });
+      const since = new Date(Date.now() - 24 * 3600 * 1000);
+      // The two counts are independent — run them concurrently. They were
+      // previously serialized, doubling the worst-case latency before a guest
+      // could be admitted.
+      const [userCount, globalCount] = await Promise.all([
+        Evaluation.countDocuments({ userId: req.userId }),
+        Evaluation.countDocuments({ createdAt: { $gte: since } }),
+      ]);
       if (userCount >= guest.maxEvalsPerGuest) {
         return res.status(429).json({
           error: `Guests are limited to ${guest.maxEvalsPerGuest} project evaluations. Sign in to keep going.`,
           code: "guest_eval_limit",
         });
       }
-      const since = new Date(Date.now() - 24 * 3600 * 1000);
-      const globalCount = await Evaluation.countDocuments({ createdAt: { $gte: since } });
       if (globalCount >= guest.maxEvalsPerDayGlobal) {
         return res.status(429).json({
           error: "We've hit our daily evaluation cap. Please try again in a few hours, or sign in.",

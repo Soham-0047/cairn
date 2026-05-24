@@ -4,10 +4,20 @@ import { Resource } from "../../models/Resource.js";
 
 const router = Router();
 
+// Escape user-supplied input before stuffing into a RegExp so admin search
+// can't be tripped into ReDoS via a crafted query like `(a+)+$`.
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 router.get("/", async (req, res) => {
-  const q = (req.query.q as string | undefined)?.trim();
+  const raw = (req.query.q as string | undefined)?.trim();
+  const q = raw ? raw.slice(0, 200) : "";
   const filter = q
-    ? { $or: [{ title: new RegExp(q, "i") }, { topics: new RegExp(q, "i") }] }
+    ? (() => {
+        const pattern = new RegExp(escapeRegex(q), "i");
+        return { $or: [{ title: pattern }, { topics: pattern }] };
+      })()
     : {};
   const items = await Resource.find(filter).sort({ qualityScore: -1 }).limit(200).lean();
   res.json(items);
@@ -41,15 +51,23 @@ router.delete("/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
-const bulkSchema = z.object({ items: z.array(upsertSchema) });
+const bulkSchema = z.object({ items: z.array(upsertSchema).max(500) });
 router.post("/bulk", async (req, res) => {
   const parse = bulkSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
-  let upserted = 0;
-  for (const item of parse.data.items) {
-    await Resource.findOneAndUpdate({ url: item.url }, { $set: item }, { upsert: true });
-    upserted++;
-  }
+  if (parse.data.items.length === 0) return res.json({ upserted: 0 });
+  // Single round-trip bulkWrite is dramatically faster than N sequential
+  // findOneAndUpdate calls and lets the driver keep partial progress on
+  // failure (ordered: false) instead of stopping at the first bad item.
+  const ops = parse.data.items.map((item) => ({
+    updateOne: {
+      filter: { url: item.url },
+      update: { $set: item },
+      upsert: true,
+    },
+  }));
+  const result = await Resource.bulkWrite(ops, { ordered: false });
+  const upserted = (result.upsertedCount || 0) + (result.modifiedCount || 0);
   res.json({ upserted });
 });
 

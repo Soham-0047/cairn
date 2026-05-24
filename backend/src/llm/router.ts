@@ -24,7 +24,9 @@ export type TaskType =
   | "generate_quiz"
   | "coach_nudge"
   | "originality_check"
-  | "embed_text";
+  | "embed_text"
+  | "interview_turn"
+  | "interview_score";
 
 export type ChainEntry = { provider: string; model: string };
 
@@ -101,9 +103,62 @@ export const DEFAULT_CHAINS: Record<TaskType, ChainEntry[]> = {
     // Placeholder — embeddings handled separately if HF is wired in.
     { provider: "google", model: "gemini-3.1-flash-lite" },
   ],
+  // Latency-critical: each interview turn blocks the user on the page. Groq +
+  // Cerebras lead because their per-token latency on small models is the
+  // lowest free option; Google models are the fallback so the chain still
+  // works when Groq/Cerebras keys are unset (common in local dev).
+  interview_turn: [
+    { provider: "groq", model: "llama-3.3-70b-versatile" },
+    { provider: "cerebras", model: "llama3.1-8b" },
+    { provider: "google", model: "gemma-4-26b-a4b-it" },
+    { provider: "google", model: "gemini-3.1-flash-lite" },
+    { provider: "google", model: "gemini-2.5-flash-lite" },
+    { provider: "google", model: "gemma-4-31b-it" },
+  ],
+  // Run-once at end of session; quality > latency. Bigger Gemma first, then
+  // Flash for JSON-mode reliability, then OpenRouter fallbacks.
+  interview_score: [
+    { provider: "google", model: "gemma-4-31b-it" },
+    { provider: "google", model: "gemma-4-26b-a4b-it" },
+    { provider: "google", model: "gemini-2.5-flash" },
+    { provider: "google", model: "gemini-3.1-flash-lite" },
+    { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
+  ],
 };
 
 type ThrottleEntry = { until: number; reason: string };
+
+/**
+ * Per-provider call timeout. A hung provider must not pin a worker — when
+ * exceeded, we reject locally and let the chain fall through to the next
+ * link. Env override lets ops tune without a redeploy.
+ */
+const LLM_CALL_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.LLM_CALL_TIMEOUT_MS) || 60_000,
+);
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    // Don't block process exit on a hung upstream call.
+    if (typeof (t as { unref?: () => void }).unref === "function") {
+      (t as { unref: () => void }).unref();
+    }
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
 
 /**
  * In-memory throttle tracking. Sufficient for single-instance hackathon
@@ -275,7 +330,11 @@ export class LLMRouter {
       }
 
       try {
-        const response = await provider.invoke({ ...req, task }, entry.model);
+        const response = await withTimeout(
+          provider.invoke({ ...req, task }, entry.model),
+          LLM_CALL_TIMEOUT_MS,
+          `${entry.provider}/${entry.model}`,
+        );
         // Optional post-call validator — lets callers reject empty/malformed
         // payloads that come back with a 200, so the chain falls through to
         // the next link instead of returning junk to the user.

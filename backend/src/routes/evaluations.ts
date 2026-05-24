@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { Types } from "mongoose";
 import { Evaluation } from "../models/Evaluation.js";
 import { User } from "../models/User.js";
 import { requireUser, type AuthedRequest } from "../middleware/auth.js";
@@ -64,6 +65,10 @@ router.get("/", requireUser, async (req: AuthedRequest, res) => {
 });
 
 router.get("/:id", requireUser, async (req: AuthedRequest, res) => {
+  const id = req.params.id;
+  if (typeof id !== "string" || !Types.ObjectId.isValid(id)) {
+    return res.status(404).json({ error: "Not found" });
+  }
   const item = await Evaluation.findOne({ _id: req.params.id, userId: req.userId }).lean();
   if (!item) return res.status(404).json({ error: "Not found" });
   res.json(item);
@@ -76,6 +81,10 @@ router.get("/:id", requireUser, async (req: AuthedRequest, res) => {
  * remains the source of truth for already-complete evaluations.
  */
 router.get("/:id/progress", requireUser, async (req: AuthedRequest, res) => {
+  const id = req.params.id;
+  if (typeof id !== "string" || !Types.ObjectId.isValid(id)) {
+    return res.status(404).json({ error: "Not found" });
+  }
   const item = await Evaluation.findOne({ _id: req.params.id, userId: req.userId }).lean();
   if (!item) return res.status(404).json({ error: "Not found" });
 

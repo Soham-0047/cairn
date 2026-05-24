@@ -144,6 +144,24 @@ export default function DashboardPage() {
     if (res.ok) setPath(await res.json());
   }
 
+  async function startQuiz(phaseIndex: number, milestoneIndex: number, topic: string, level: number) {
+    const res = await proxyFetch("/quizzes/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        topic,
+        level: Math.min(5, Math.max(1, level)),
+        n: 5,
+        pathId: path!._id,
+        phaseIndex,
+        milestoneIndex,
+      }),
+    });
+    if (res.ok) {
+      const quiz = await res.json();
+      router.push(`/quizzes/${quiz._id}`);
+    }
+  }
+
   const guestMeta = getGuestMeta();
   const userName = session?.user?.name?.split(" ")[0] || guestMeta?.handle || "there";
   const userEmail = session?.user?.email || (guestMeta ? "guest mode" : undefined);
@@ -182,7 +200,7 @@ export default function DashboardPage() {
         <div className="dash-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 32, padding: 32 }}>
           <div>
             <DashHero pct={pct} completed={done} total={total} userName={userName} stretchWarning={path.stretchGoalWarning} />
-            <Timeline phases={path.phases} onMarkDone={markDone} />
+            <Timeline phases={path.phases} onMarkDone={markDone} onStartQuiz={(pi, mi, topic) => startQuiz(pi, mi, topic, 3)} />
           </div>
           <RightRail path={path} />
         </div>
@@ -301,9 +319,11 @@ const DashHero = ({
 const Timeline = ({
   phases,
   onMarkDone,
+  onStartQuiz,
 }: {
   phases: Phase[];
   onMarkDone: (phaseIndex: number, milestoneIndex: number) => void;
+  onStartQuiz: (phaseIndex: number, milestoneIndex: number, topic: string) => void;
 }) => (
   <div style={{ marginTop: 32 }}>
     {phases.map((phase, pi) => (
@@ -330,7 +350,12 @@ const Timeline = ({
             }}
           />
           {phase.milestones.map((m, mi) => (
-            <WeekNode key={mi} milestone={m} onMarkDone={() => onMarkDone(pi, mi)} />
+            <WeekNode
+              key={mi}
+              milestone={m}
+              onMarkDone={() => onMarkDone(pi, mi)}
+              onStartQuiz={() => onStartQuiz(pi, mi, m.topic)}
+            />
           ))}
         </div>
 
@@ -363,9 +388,11 @@ const Timeline = ({
 const WeekNode = ({
   milestone,
   onMarkDone,
+  onStartQuiz,
 }: {
   milestone: Milestone;
   onMarkDone: () => void;
+  onStartQuiz: () => void;
 }) => {
   const [expanded, setExpanded] = useState(milestone.status === "in_progress");
   const statusColor =
@@ -585,6 +612,11 @@ const WeekNode = ({
                   <MagneticButton href="/projects/new">
                     <Icon name="upload" size={14} /> Submit project
                   </MagneticButton>
+                )}
+                {milestone.status !== "done" && (
+                  <button onClick={onStartQuiz} className="btn-magnetic btn-ghost" style={{ padding: "8px 14px", fontSize: 13 }}>
+                    <Icon name="spark" size={13} /> Quiz me
+                  </button>
                 )}
                 {milestone.status !== "done" && (
                   <button onClick={onMarkDone} className="btn-magnetic btn-ghost" style={{ padding: "8px 14px", fontSize: 13 }}>

@@ -79,6 +79,13 @@ const evaluationSchema = new Schema(
   { timestamps: true },
 );
 
+// Guest-limit middleware does a daily global count over createdAt — index it
+// so that check stays O(log n) once the eval corpus grows.
+evaluationSchema.index({ createdAt: -1 });
+// User-scoped history listings sort by createdAt; the existing userId index
+// plus this compound makes the common dashboard query (`find({ userId }).sort({ createdAt: -1 })`) an index scan instead of an in-memory sort.
+evaluationSchema.index({ userId: 1, createdAt: -1 });
+
 export type EvaluationDoc = InferSchemaType<typeof evaluationSchema> & { _id: Types.ObjectId };
 
 export const Evaluation = model("Evaluation", evaluationSchema);

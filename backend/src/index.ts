@@ -16,6 +16,8 @@ import portfolioRoutes from "./routes/portfolio.js";
 import configRoutes from "./routes/config.js";
 import adminRoutes from "./routes/admin/index.js";
 import transcriptionRoutes from "./routes/transcription.js";
+import quizRoutes from "./routes/quizzes.js";
+import interviewRoutes from "./routes/interviews.js";
 import { seedEnvCredentials } from "./llm/providers/registry.js";
 import { getCredentialStore } from "./llm/credentialStore.js";
 import { startWeeklyNudgeJob } from "./jobs/weekly-nudge.js";
@@ -86,6 +88,8 @@ async function main() {
   // Authed user APIs
   app.use("/api/paths", pathsRoutes);
   app.use("/api/evaluations", evalRoutes);
+  app.use("/api/quizzes", quizRoutes);
+  app.use("/api/interviews", interviewRoutes);
   app.use("/api", transcriptionRoutes);
 
   // Public portfolio (no auth)

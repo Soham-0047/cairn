@@ -87,6 +87,10 @@ const pathSchema = new Schema(
   { timestamps: true },
 );
 
+// `GET /api/paths/active` and the guest-limit count both query by
+// (userId, status) — a compound index serves both without scanning.
+pathSchema.index({ userId: 1, status: 1, createdAt: -1 });
+
 export type PathDoc = InferSchemaType<typeof pathSchema> & { _id: Types.ObjectId };
 
 export const Path = model("Path", pathSchema);

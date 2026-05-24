@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { Types } from "mongoose";
 import { Path } from "../models/Path.js";
 import { requireUser, type AuthedRequest } from "../middleware/auth.js";
 import { checkGuestLimit } from "../middleware/guestLimits.js";
@@ -68,13 +69,30 @@ router.get("/active", requireUser, async (req: AuthedRequest, res) => {
 });
 
 router.get("/:id", requireUser, async (req: AuthedRequest, res) => {
+  const id = req.params.id;
+  if (typeof id !== "string" || !Types.ObjectId.isValid(id)) {
+    return res.status(404).json({ error: "Not found" });
+  }
   const path = await Path.findOne({ _id: req.params.id, userId: req.userId }).lean();
   if (!path) return res.status(404).json({ error: "Not found" });
   res.json(path);
 });
 
 router.post("/:id/milestone/done", requireUser, async (req: AuthedRequest, res) => {
-  const { phaseIndex, milestoneIndex } = req.body as { phaseIndex: number; milestoneIndex: number };
+  const id = req.params.id;
+  if (typeof id !== "string" || !Types.ObjectId.isValid(id)) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  const milestoneBody = z
+    .object({
+      phaseIndex: z.number().int().min(0).max(50),
+      milestoneIndex: z.number().int().min(0).max(50),
+    })
+    .safeParse(req.body);
+  if (!milestoneBody.success) {
+    return res.status(400).json({ error: milestoneBody.error.flatten() });
+  }
+  const { phaseIndex, milestoneIndex } = milestoneBody.data;
   const update = await Path.findOneAndUpdate(
     { _id: req.params.id, userId: req.userId },
     {

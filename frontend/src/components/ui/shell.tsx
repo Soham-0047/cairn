@@ -122,7 +122,7 @@ export const TopNav = () => {
 };
 
 /* ------------------------ Sidebar (app shell) ------------------------ */
-type SidebarKey = "dashboard" | "path-new" | "projects-new" | "projects-detail" | "projects-list" | "portfolio" | "settings" | "admin";
+type SidebarKey = "dashboard" | "path-new" | "projects-new" | "projects-detail" | "projects-list" | "quizzes" | "interviews" | "portfolio" | "settings" | "admin";
 
 export const Sidebar = ({ active, userName, userEmail, userHandle, targetRole, weekProgress }: {
   active: SidebarKey;
@@ -139,6 +139,8 @@ export const Sidebar = ({ active, userName, userEmail, userHandle, targetRole, w
     ["path-new", "/onboarding", "New path", "sparkles"],
     ["projects-new", "/projects/new", "Submit", "plus"],
     ["projects-list", "/projects", "Projects", "folder"],
+    ["quizzes", "/quizzes", "Quizzes", "spark"],
+    ["interviews", "/interviews", "Interviews", "mic"],
     ["portfolio", portfolioHref, "Portfolio", "user"],
     ["settings", "/settings", "Settings", "settings"],
     ["admin", "/admin", "Admin", "shield"],
