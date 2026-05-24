@@ -7,6 +7,7 @@ import { Credential } from "../models/Credential.js";
 import { fetchRepoSnapshot, getDependencyVulnerabilities, type VulnSummary } from "./github.service.js";
 import { logger } from "../utils/logger.js";
 import { sendCredentialIssued, sendEvalComplete } from "./email.service.js";
+import { checkOriginality, type OriginalityResult } from "./originality.service.js";
 import type { Part } from "../llm/types.js";
 
 /**
@@ -114,8 +115,36 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
       score: structural.score,
     });
 
+    // ---------- Stage 1.5: Originality (vector fingerprint check) ----------
+    // Plan §8: "Stage 2: originality (HuggingFace inference API for code
+    // embeddings, compare against known tutorial repo embeddings)." We use
+    // Google embeddings + Qdrant instead — same idea, free tier we already
+    // pay for. Runs deterministically; only escalates to an LLM verdict when
+    // similarity is in the ambiguous band.
+    emitProgress(evalId, { stage: 2, status: "running", label: "Originality check" });
+    const originality = await checkOriginality({
+      readme: snapshot.readme,
+      codeExcerpts: snapshot.codeExcerpts,
+      description: input.projectTitle,
+    });
+    evalDoc.stages.push({
+      name: "Originality check",
+      score: originality.score,
+      summary: originality.reasoning,
+      findings: originality.matches.map(
+        (m) => `~${m.score.toFixed(2)} match: ${m.label || m.sourceUrl}`,
+      ),
+    });
+    evalDoc.originalityFlagged = originality.flagged;
+    emitProgress(evalId, {
+      stage: 2,
+      status: "complete",
+      label: "Originality check",
+      score: originality.score,
+    });
+
     // ---------- Stage 2: Text-based code review (Gemma 4 27B) ----------
-    emitProgress(evalId, { stage: 2, status: "running", label: "Code review" });
+    emitProgress(evalId, { stage: 3, status: "running", label: "Code review" });
     const router = getRouter();
     const textStart = Date.now();
     const { response: textRes, trace: textTrace } = await router.call("evaluate_project", {
@@ -130,6 +159,9 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
             fileTree: snapshot.fileTree,
             codeExcerpts: snapshot.codeExcerpts,
             vulnerabilities: vulns,
+            // Feed the vector check's verdict into the LLM context so it
+            // calibrates the originality sub-score with this evidence.
+            originality,
           }),
         },
       ],
@@ -152,7 +184,7 @@ export async function evaluateProject(input: EvaluateProjectInput): Promise<Eval
       latencyMs: Date.now() - textStart,
     });
     emitProgress(evalId, {
-      stage: 2,
+      stage: 3,
       status: "complete",
       label: "Code review",
       score: clamp01(textResult.overall),

@@ -111,6 +111,12 @@ export const PROJECT_EVAL_TEXT_PROMPT = (params: {
     low: number;
     total: number;
   };
+  originality?: {
+    score: number;
+    flagged: boolean;
+    reasoning: string;
+    source: string;
+  };
 }) => `You are evaluating whether a developer's project demonstrates real, original work.
 
 PROJECT: ${params.projectTitle}
@@ -129,6 +135,12 @@ ${
   params.vulnerabilities?.available
     ? `DEPENDENCY SCAN: ${params.vulnerabilities.total} open vulnerabilities (${params.vulnerabilities.critical} critical, ${params.vulnerabilities.high} high, ${params.vulnerabilities.medium} medium, ${params.vulnerabilities.low} low). Factor this into the security quality score.`
     : "DEPENDENCY SCAN: Dependabot not enabled — security-quality data unavailable."
+}
+
+${
+  params.originality
+    ? `VECTOR ORIGINALITY CHECK (pre-computed): score=${params.originality.score.toFixed(2)}, flagged=${params.originality.flagged}, source=${params.originality.source}. Reasoning: ${params.originality.reasoning}. Use this as evidence when scoring originality — you may override it if the code clearly contradicts it.`
+    : ""
 }
 
 Score the project across:

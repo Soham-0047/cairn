@@ -121,7 +121,7 @@ export async function finishInterview(params: {
       strengths: parsed.data.strengths,
       improvements: parsed.data.improvements,
       summary: parsed.data.summary,
-      recommendation: parsed.data.recommendation,
+      recommendation: parsed.data.recommendation as "" | "strong_hire" | "hire" | "lean_hire" | "no_hire" | "strong_no_hire",
     };
   } else {
     logger.warn({ errors: parsed.error.flatten() }, "interview score schema fallback");

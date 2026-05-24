@@ -68,6 +68,8 @@ const evaluationSchema = new Schema(
       default: [],
     },
 
+    originalityFlagged: { type: Boolean, default: false },
+
     status: {
       type: String,
       enum: ["queued", "running", "complete", "failed"],
