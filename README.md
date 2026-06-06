@@ -207,10 +207,9 @@ The full chain for each task is editable at runtime via the admin panel, so the 
 
 ### Live demo
 
-- Hosted: _(deploy URL)_
-- Example portfolio: _(deploy URL)/u/example_
-- GitHub: _(repo URL)_
-- Demo video: _(2-min Loom)_
+- Hosted: _https://cairnapp.netlify.app_
+- Example portfolio: _https://cairnapp.netlify.app/example_
+- GitHub: _https://github.com/Soham-0047/cairn_
 
 ---
 

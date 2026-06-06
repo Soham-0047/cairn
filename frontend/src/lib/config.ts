@@ -89,7 +89,7 @@ const FALLBACK: SiteConfig = {
 export async function getSiteConfig(): Promise<SiteConfig> {
   try {
     const res = await fetch(`${backendUrl()}/api/config`, {
-      next: { revalidate: 30 },
+      cache: "no-store",
     });
     if (!res.ok) return FALLBACK;
     const data = await res.json();

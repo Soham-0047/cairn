@@ -30,7 +30,7 @@ type RawPortfolio = {
 
 async function fetchPortfolio(handle: string): Promise<RawPortfolio | null> {
   const res = await fetch(`${backendUrl()}/api/portfolio/${handle}`, {
-    next: { revalidate: 60 },
+    cache: "no-store",
   });
   if (!res.ok) return null;
   return res.json();
