@@ -457,3 +457,17 @@ section { position: relative; }
     @apply w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10;
   }
 }
+
+/* Visually hidden but present for screen readers and crawlers. Used by
+   SplitText so animated per-character headings still expose clean text. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

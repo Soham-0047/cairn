@@ -21,7 +21,7 @@
 # --------------------------------------------------------------------------
 # Canonical host
 # --------------------------------------------------------------------------
-# Everything must resolve to https://cairnpath.sohamdev.com so link equity lands
+# Everything must resolve to https://cairn.sohamdev.com so link equity lands
 # on one hostname.
 #
 # There is deliberately NO redirect rule here. Promoting the custom domain to

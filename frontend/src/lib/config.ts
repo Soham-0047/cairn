@@ -7,6 +7,7 @@
  */
 
 import { backendUrl } from "./api";
+import { SITE_DESCRIPTION, SITE_TITLE } from "./site";
 
 export type SiteConfig = {
   brand: {
@@ -49,14 +50,14 @@ const FALLBACK: SiteConfig = {
     name: "Cairn",
     tagline: "Your AI learning + career engine",
     logoUrl: "/logo.svg",
-    faviconUrl: "/favicon.ico",
+    faviconUrl: "",
     primaryColor: "#0f766e",
     accentColor: "#f59e0b",
   },
   copy: {
     heroTitle: "Your AI-built path from where you are to where you want to be.",
     heroSubtitle:
-      "Cairn turns the internet's chaos of free tutorials into a 90-day path that adapts to your starting point, verifies your projects, and builds a recruiter-ready portfolio.",
+      "Cairn turns the internet's chaos of free tutorials into a 12-week path that adapts to your starting point, verifies your projects, and builds a recruiter-ready portfolio.",
     heroCtaPrimary: "Start your path",
     heroCtaSecondary: "See an example portfolio",
     footerNote: "Built for the Gemma 4 Challenge — May 2026.",
@@ -70,9 +71,11 @@ const FALLBACK: SiteConfig = {
     jobFeed: false,
     showAttribution: true,
   },
+  // Mirrors lib/site.ts so the metadata is identical whether or not the
+  // backend answered — a cold API must not change what a crawler indexes.
   seo: {
-    title: "Cairn — AI-personalized learning paths",
-    description: "Personalized 90-day learning paths verified by AI.",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
     ogImageUrl: "",
   },
   guestMode: {

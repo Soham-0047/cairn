@@ -15,6 +15,8 @@ import {
   Typewriter,
 } from "@/components/ui/primitives";
 import { TopNav, Footer } from "@/components/ui/shell";
+import { FaqJsonLd } from "@/components/JsonLd";
+import { FAQ_ITEMS, SITE_EMAIL } from "@/lib/site";
 import { CursorAndProgress } from "@/components/ui/CursorAndProgress";
 
 export default function LandingPage() {
@@ -32,6 +34,7 @@ export default function LandingPage() {
       <WhyGemma />
       {/* <Pricing /> hidden for hackathon */}
       <FAQ />
+      <FaqJsonLd />
       <Footer />
       <Modal open={demoOpen} onClose={() => setDemoOpen(false)} width={840}>
         <div
@@ -918,14 +921,9 @@ const Pricing = () => {
 };
 
 const FAQ = () => {
-  const faqs = [
-    { q: "How is this different from just a course platform?", a: "Cairn never sells you content. We curate the best free resources, pace them, and — most importantly — verify what you shipped. The credential lives outside Cairn: it's an HMAC-signed JSON anyone can check." },
-    { q: "What does 'multimodal evaluation' actually do?", a: "For each project, we run four stages: structural (commit graph, tests, README), code review (Gemma 4 27B reads the AST), visual review (Gemma 4 12B looks at screenshots of your running app), and synthesis (signed credential if score ≥ 0.65)." },
-    { q: "What happens if Gemma 4 is down?", a: "Every task has a fallback chain. The default is Gemma 4 27B → Gemini 2.5 → DeepSeek R3 → Local 4B. You can customise this per-task in admin." },
-    { q: "Can recruiters trust the credential?", a: "Yes. The badge contains a signed JSON payload. Recruiters can verify it against our public key or run their own verifier — no Cairn account required." },
-    { q: "Will it generate a path for anything?", a: "It works best for technical paths: software engineering, ML, design engineering, devrel. For very niche or non-tech careers we ship a 'best-effort' path with a warning." },
-    { q: "Is my code stored?", a: "No. We pull the repo at evaluation time, build a structural representation, and discard the source. The evaluation report is yours." },
-  ];
+  // Shared with the FAQPage structured data so the rich result can never
+  // advertise an answer the page doesn't actually show.
+  const faqs = FAQ_ITEMS;
   const [open, setOpen] = useState(0);
   return (
     <section style={{ padding: "120px 0", borderTop: "1px solid var(--border)" }}>
@@ -936,7 +934,7 @@ const FAQ = () => {
             The <i>honest</i> answers.
           </h2>
           <p style={{ color: "var(--text-mid)", marginTop: 18, fontSize: 15, lineHeight: 1.6 }}>
-            Still curious? Email <a href="#" style={{ color: "#a5b4fc" }}>hi@cairn.dev</a> — we read everything.
+            Still curious? Email <a href={`mailto:${SITE_EMAIL}`} style={{ color: "#a5b4fc" }}>{SITE_EMAIL}</a> — we read everything.
           </p>
         </div>
         <div>

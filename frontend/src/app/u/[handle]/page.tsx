@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import { backendUrl } from "@/lib/api";
 import { getSiteConfig } from "@/lib/config";
+import { SITE_NAME } from "@/lib/site";
 import type { Metadata } from "next";
 import { PortfolioView, type PortfolioData } from "@/components/ui/PortfolioView";
+import { BreadcrumbJsonLd, PortfolioJsonLd } from "@/components/JsonLd";
 
 type RawPortfolio = {
   profile: {
@@ -43,15 +45,39 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { handle } = await params;
   const [data, cfg] = await Promise.all([fetchPortfolio(handle), getSiteConfig()]);
-  if (!data) return { title: "Not found" };
-  const title = `${data.profile.name || handle} — Verified on ${cfg.brand.name}`;
-  const description = data.profile.targetRole
-    ? `${data.profile.name || handle} is becoming a ${data.profile.targetRole}. ${data.credentials.length} verified credentials.`
-    : `Public portfolio of ${data.profile.name || handle}.`;
+  // A missing portfolio renders the 404 below. Keep it out of the index so a
+  // deleted or mistyped handle can't accumulate crawl budget.
+  if (!data) return { title: "Not found", robots: { index: false, follow: false } };
+
+  const name = data.profile.name || handle;
+  const brand = cfg.brand.name || SITE_NAME;
+  const skills = [...new Set(data.projects.flatMap((p) => p.skills))].slice(0, 8);
+
+  const title = `${name} — Verified ${data.profile.targetRole || "developer"} portfolio`;
+  const description = [
+    data.profile.targetRole ? `${name} is becoming a ${data.profile.targetRole}.` : `Public portfolio of ${name}.`,
+    `${data.credentials.length} AI-verified credential${data.credentials.length === 1 ? "" : "s"}`,
+    `across ${data.projects.length} shipped project${data.projects.length === 1 ? "" : "s"}.`,
+    skills.length ? `Skills: ${skills.join(", ")}.` : "",
+    `Verified on ${brand}.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const url = `/u/${handle}`;
   return {
     title,
     description,
-    openGraph: { title, description },
+    keywords: skills.length ? [...skills, `${name} portfolio`, "verified developer portfolio"] : undefined,
+    alternates: { canonical: url },
+    openGraph: {
+      type: "profile",
+      url,
+      title,
+      description,
+      images: data.profile.avatarUrl ? [data.profile.avatarUrl] : undefined,
+    },
+    twitter: { card: "summary_large_image", title, description },
   };
 }
 
@@ -85,5 +111,23 @@ export default async function PortfolioPage({
       evaluatedAt: p.evaluatedAt,
     })),
   };
-  return <PortfolioView data={data} />;
+  return (
+    <>
+      <BreadcrumbJsonLd
+        items={[
+          { name: "Home", path: "/" },
+          { name: `${data.profile.name} portfolio`, path: `/u/${handle}` },
+        ]}
+      />
+      <PortfolioJsonLd
+        name={data.profile.name}
+        handle={data.profile.handle || handle}
+        targetRole={data.profile.targetRole}
+        avatarUrl={data.profile.avatarUrl}
+        githubUsername={data.profile.githubUsername}
+        credentials={raw.credentials.map((c) => ({ name: c.title, issuedAt: c.issuedAt }))}
+      />
+      <PortfolioView data={data} />
+    </>
+  );
 }

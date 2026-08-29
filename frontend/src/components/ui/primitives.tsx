@@ -503,7 +503,12 @@ export const SplitText = ({
   const words = text.split(" ");
   return (
     <span className={className} style={style}>
-      {words.map((word, wi) => (
+      {/* The animation shreds the heading into one span per character. Emit the
+          plain string once for screen readers and crawlers, and hide the
+          decorative copy from the accessibility tree. */}
+      <span className="sr-only">{text}</span>
+      <span aria-hidden="true">
+        {words.map((word, wi) => (
         <span key={wi} style={{ display: "inline-block", whiteSpace: "pre" }}>
           {[...word].map((ch, ci) => (
             <span
@@ -520,7 +525,8 @@ export const SplitText = ({
             <span style={{ display: "inline-block", width: "0.32em" }}>{" "}</span>
           )}
         </span>
-      ))}
+        ))}
+      </span>
     </span>
   );
 };

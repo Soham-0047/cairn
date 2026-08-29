@@ -1,0 +1,146 @@
+# Cairn — full description
+
+> Cairn (https://cairn.sohamdev.com) is a free AI learning and career engine. It generates a personalized 12-week
+> learning path from free internet resources, evaluates the projects you ship using both code review and visual
+> review of screenshots, and issues signed, independently verifiable skill credentials that build into a public
+> portfolio.
+
+This document is the long-form reference. The short version is at https://cairn.sohamdev.com/llms.txt.
+
+---
+
+## The problem Cairn addresses
+
+Free learning material is abundant and free learning *paths* are not. A self-taught developer can find a hundred
+React tutorials and still not know which order to do them in, when they are ready to move on, or how to prove to a
+hiring manager that they learned anything. Bookmarks accumulate; evidence does not.
+
+Course platforms solve sequencing by selling you their content, which locks the path to one vendor's catalogue and
+still ends in a certificate that attests to attendance rather than ability.
+
+Cairn separates the two problems. Sequencing is solved by generating a path over the free internet. Proof is solved
+by evaluating the artifacts you actually build.
+
+---
+
+## How Cairn works
+
+### 1. Goal parsing
+
+You write your goal in plain language — for example, "I'm a frontend developer with 2 years of React, I want to be
+an AI engineer, I have about 10 hours a week." A small fast model extracts a structured profile: current skills,
+target role, time budget, and constraints. This runs in under a second so onboarding stays conversational.
+
+### 2. Path generation
+
+A larger reasoning model builds a 12-week path: phases, milestones within each phase, and the free resources that
+teach each milestone. Resources come from a curated corpus plus live semantic search, so the path cites current
+tutorials rather than a frozen list. The generator also loads anonymized paths of similar past learners from a
+vector store, so the sequencing reflects what has worked for people starting where you are.
+
+The output is a set of milestones with concrete deliverables, not a reading list.
+
+### 3. Project submission and multimodal evaluation
+
+This is the part that makes the credential worth anything. You submit a GitHub repository URL and, optionally, up to
+four screenshots of the running application. Evaluation runs in four stages:
+
+- **Structural** — The commit graph, test presence and coverage, README quality, and project layout. This catches
+  single-commit dumps and tutorials copied wholesale.
+- **Code review** — A reasoning model reads the source and assesses correctness, structure, and whether the code
+  supports the claims the project makes about itself.
+- **Visual review** — A vision model looks at the screenshots of the running app and compares what the interface
+  actually shows against what the code claims to do. This is the stage that distinguishes a polished-looking demo
+  with sloppy internals from clean code behind a placeholder UI.
+- **Synthesis** — The stages are combined into a score. Projects above the threshold earn a credential.
+
+### 4. Credentials
+
+A passing project produces an HMAC-signed JSON credential naming the project, the skills demonstrated, the score,
+and the timestamp. Because it is signed and self-contained, it can be verified against Cairn's public key by anyone
+— a recruiter does not need a Cairn account, and the credential survives Cairn itself.
+
+### 5. Portfolio
+
+Everything assembles into a public page at `/u/<handle>`: path progress, evaluated projects with their strengths and
+skills, and the credential badges. It is server-rendered and built to be pasted into a job application.
+
+### 6. Quizzes and mock interviews
+
+Adaptive quizzes and mock interview sessions are generated against the milestones you have actually reached, so
+practice tracks the path rather than being a generic question bank.
+
+---
+
+## Model routing
+
+Cairn routes each task to the model that fits it, through a provider-agnostic router with automatic fallback:
+
+| Task | Model | Why |
+|---|---|---|
+| Goal parsing | Gemma 4 4B | Small and fast; sub-second structured extraction, called often |
+| Path generation | Gemma 4 27B | Heavy reasoning over a long context — resource corpus plus similar-learner data |
+| Code review | Gemma 4 27B | Reasoning across multi-file source |
+| Visual project review | Gemma 4 12B (vision) | Native vision — evaluates the actual rendered UI |
+
+Every task has a fallback chain (for example Gemma 4 27B → Gemini 2.5 → DeepSeek → a local 4B model), so free-tier
+rate limits degrade quality rather than breaking the product. Chains are reconfigurable per task at runtime without
+a redeploy.
+
+---
+
+## Technology
+
+- Frontend: Next.js 15 (App Router, server-rendered), React, TypeScript, Tailwind, NextAuth with GitHub and Google sign-in.
+- Backend: Node.js, Express, TypeScript, MongoDB with Mongoose.
+- Retrieval: Qdrant vector store for similar-learner recall; Exa for live semantic resource search.
+- Hosting: frontend on Netlify behind Cloudflare, backend on Render.
+
+---
+
+## Pricing
+
+Free to start. Guest mode generates a learning path without creating an account. There is no course to buy.
+
+---
+
+## Frequently asked questions
+
+**How is Cairn different from a course platform?**
+Cairn never sells you content. It curates the best free resources, paces them, and verifies what you shipped. The
+credential lives outside Cairn: it is an HMAC-signed JSON payload anyone can check.
+
+**What does multimodal evaluation actually do?**
+Four stages per project: structural analysis of the commit graph, tests and README; AI code review of the source;
+visual review of screenshots of the running app; and synthesis, which issues a signed credential above the score
+threshold.
+
+**What happens if the primary model is down?**
+Every task has a fallback chain — by default Gemma 4 27B, then Gemini 2.5, then DeepSeek, then a local 4B model.
+Chains are configurable per task.
+
+**Can recruiters trust the credential?**
+Yes. The badge contains a signed JSON payload verifiable against Cairn's public key, or by a recruiter's own
+verifier. No Cairn account is required.
+
+**Will Cairn generate a path for anything?**
+It works best for technical paths — software engineering, machine learning, design engineering, developer relations.
+Very niche or non-technical goals get a best-effort path with a warning attached.
+
+**Is my code stored?**
+No. Cairn pulls the repository at evaluation time, builds a structural representation, and discards the source. The
+evaluation report belongs to you.
+
+**Is it free?**
+Yes, free to start, and guest mode works without an account.
+
+---
+
+## Links
+
+- Home: https://cairn.sohamdev.com/
+- Example portfolio: https://cairn.sohamdev.com/example
+- Start a path: https://cairn.sohamdev.com/onboarding
+- Short summary for LLMs: https://cairn.sohamdev.com/llms.txt
+- Source code (MIT): https://github.com/Soham-0047/cairn
+- Contact: hi@sohamdev.com

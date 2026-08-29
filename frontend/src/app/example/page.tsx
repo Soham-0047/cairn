@@ -1,4 +1,20 @@
+import type { Metadata } from "next";
 import { PortfolioView, type PortfolioData } from "@/components/ui/PortfolioView";
+import { BreadcrumbJsonLd } from "@/components/JsonLd";
+
+export const metadata: Metadata = {
+  title: "Example Portfolio — What a Verified Profile Looks Like",
+  description:
+    "A sample Cairn portfolio: an AI-generated 12-week learning path, shipped projects reviewed by AI, and signed skill credentials a recruiter can verify. No signup needed to look around.",
+  alternates: { canonical: "/example" },
+  openGraph: {
+    type: "profile",
+    url: "/example",
+    title: "Example Portfolio — What a Verified Profile Looks Like",
+    description:
+      "A sample Cairn portfolio: an AI-generated learning path, AI-reviewed projects, and verifiable skill credentials.",
+  },
+};
 
 const EXAMPLE: PortfolioData = {
   profile: {
@@ -92,5 +108,10 @@ const EXAMPLE: PortfolioData = {
 };
 
 export default function ExamplePage() {
-  return <PortfolioView data={EXAMPLE} example />;
+  return (
+    <>
+      <BreadcrumbJsonLd items={[{ name: "Home", path: "/" }, { name: "Example portfolio", path: "/example" }]} />
+      <PortfolioView data={EXAMPLE} example />
+    </>
+  );
 }

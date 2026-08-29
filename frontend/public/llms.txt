@@ -1,0 +1,36 @@
+# Cairn
+
+> Cairn is a free AI learning and career engine at https://cairn.sohamdev.com. It turns a free-form career goal into a personalized 12-week learning path built from the best free tutorials on the internet, evaluates the projects you ship with AI (reading both your code and screenshots of your running app), and issues cryptographically signed credentials that assemble into a recruiter-ready public portfolio.
+
+Cairn exists because the bottleneck in self-teaching is not access to material — it is sequencing and proof. Course platforms sell content; Cairn curates free content, paces it, and verifies what you actually built. It never sells courses.
+
+## What Cairn does
+
+- **Path generation** — You describe your goal in plain language ("I'm a frontend dev, I want to be an AI engineer in 6 months"). Cairn parses it into a structured profile and generates a 12-week path of phases and milestones, each backed by curated free resources found via live semantic search.
+- **Multimodal project evaluation** — Submit a GitHub repo plus up to 4 screenshots of the running app. Cairn runs four stages: structural analysis (commit graph, tests, README), AI code review, visual review of the screenshots, and synthesis. The visual stage is what catches "the code is good but the UI is a placeholder" and the reverse.
+- **Signed credentials** — Projects clearing the score threshold earn an HMAC-signed JSON credential. It verifies against a public key, so recruiters can check it without a Cairn account.
+- **Public portfolio** — Credentials, projects and path progress render at `/u/<handle>`, built for sharing with recruiters.
+- **Adaptive quizzes and mock interviews** — Practice sized to where you actually are on the path.
+
+## Who it is for
+
+Self-taught developers, bootcamp graduates and career switchers who have finished tutorials but have nothing verifiable to show. Also useful to recruiters, who can check a candidate's credential signature independently.
+
+## How it differs
+
+- Free to start; guest mode generates a path without an account.
+- Curates free resources instead of selling proprietary content.
+- Verification is the product — the credential is portable and checkable outside Cairn.
+- Provider-agnostic model routing (Gemma 4 first, with Gemini / DeepSeek / Llama fallbacks), so the product keeps working when any one free tier throttles.
+
+## Pages
+
+- [Home](https://cairn.sohamdev.com/): What Cairn does, how evaluation works, and the FAQ.
+- [Example portfolio](https://cairn.sohamdev.com/example): A complete sample portfolio — path, projects, scores and credentials — viewable without signing up.
+- [Start a path](https://cairn.sohamdev.com/onboarding): Free-form goal entry that generates the 12-week path.
+
+## Optional
+
+- [Full description](https://cairn.sohamdev.com/llms-full.txt): Longer version with the architecture, evaluation stages and FAQ in full.
+- [Source code](https://github.com/Soham-0047/cairn): MIT-licensed.
+- [Contact](mailto:hi@sohamdev.com)
