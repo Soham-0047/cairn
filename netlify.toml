@@ -1,4 +1,12 @@
 [build]
+  # `publish` is resolved relative to the directory the build is invoked from,
+  # NOT relative to `base`. Netlify CI always invokes from the repo root, so
+  # this path is repo-root-relative and correct there.
+  #
+  # The consequence: always run the CLI from the repo root too.
+  # `netlify deploy` from inside frontend/ resolves this to
+  # frontend/frontend/.next and the Next.js plugin fails with
+  # "Your publish directory was not found".
   base    = "frontend"
   command = "npm install && npm run build"
   publish = "frontend/.next"
@@ -9,3 +17,55 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# --------------------------------------------------------------------------
+# Canonical host
+# --------------------------------------------------------------------------
+# Everything must resolve to https://cairnpath.sohamdev.com so link equity lands
+# on one hostname.
+#
+# There is deliberately NO redirect rule here. Promoting the custom domain to
+# "primary" in Netlify's Domain management generates the 301 from
+# cairnetlify.netlify.app itself; a hand-written rule on top of that is redundant
+# and is how redirect loops get created. Promoting the domain IS the SEO switch.
+
+# --------------------------------------------------------------------------
+# Headers
+# --------------------------------------------------------------------------
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "SAMEORIGIN"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+# The machine-readable surface. The Content-Type is load-bearing: served as
+# application/octet-stream a browser downloads the file instead of showing it,
+# and several fetching agents discard it outright. ACAO is set on purpose — a
+# browser-based agent reading cross-origin would otherwise be blocked.
+[[headers]]
+  for = "/llms.txt"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+    Cache-Control = "public, max-age=3600"
+    X-Robots-Tag = "all"
+    Access-Control-Allow-Origin = "*"
+
+[[headers]]
+  for = "/llms-full.txt"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+    Cache-Control = "public, max-age=3600"
+    X-Robots-Tag = "all"
+    Access-Control-Allow-Origin = "*"
+
+[[headers]]
+  for = "/robots.txt"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/sitemap.xml"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"

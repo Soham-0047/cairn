@@ -6,6 +6,10 @@ const schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.string().default("info"),
   FRONTEND_URL: z.string().url().default("http://localhost:3000"),
+  // Comma-separated extra origins allowed through CORS alongside FRONTEND_URL.
+  // Needed while more than one hostname serves the app — during a domain
+  // migration, and for the Netlify origin sitting behind Cloudflare.
+  EXTRA_CORS_ORIGINS: z.string().optional().default(""),
 
   MONGODB_URI: z.string().min(1),
 

@@ -24,7 +24,9 @@ const siteConfigSchema = new Schema(
       name: { type: String, default: "Cairn" },
       tagline: { type: String, default: "Your AI learning + career engine" },
       logoUrl: { type: String, default: "/logo.svg" },
-      faviconUrl: { type: String, default: "/favicon.ico" },
+      // Empty by default so Next's `app/icon.svg` convention supplies the icon.
+      // Set this only to override with an uploaded favicon.
+      faviconUrl: { type: String, default: "" },
       primaryColor: { type: String, default: "#0f766e" }, // teal-700
       accentColor: { type: String, default: "#f59e0b" },  // amber-500
     },
@@ -35,7 +37,7 @@ const siteConfigSchema = new Schema(
       heroSubtitle: {
         type: String,
         default:
-          "Cairn turns the internet's chaos of free tutorials into a 90-day path that adapts to your starting point, verifies your projects, and builds a recruiter-ready portfolio.",
+          "Cairn turns the internet's chaos of free tutorials into a 12-week path that adapts to your starting point, verifies your projects, and builds a recruiter-ready portfolio.",
       },
       heroCtaPrimary: { type: String, default: "Start your path" },
       heroCtaSecondary: { type: String, default: "See an example portfolio" },
@@ -92,8 +94,13 @@ const siteConfigSchema = new Schema(
 
     /** SEO / OG. */
     seo: {
-      title: { type: String, default: "Cairn — AI-personalized learning paths" },
-      description: { type: String, default: "Personalized 90-day learning paths verified by AI. Built for aspiring developers." },
+      title: { type: String, default: "Cairn — AI Learning Path Generator with Verified Project Credentials" },
+      description:
+        {
+          type: String,
+          default:
+            "Cairn builds you a free, personalized 12-week learning path from the best free tutorials on the internet, reviews the projects you ship with AI (code + screenshots), and issues signed credentials that build a recruiter-ready portfolio. Free to start, no course to buy.",
+        },
       ogImageUrl: { type: String, default: "" },
     },
   },

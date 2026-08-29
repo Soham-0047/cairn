@@ -58,9 +58,22 @@ async function main() {
   const app = express();
 
   app.use(helmet({ contentSecurityPolicy: false }));
+  // One deployment can be reached on several hostnames at once — the canonical
+  // domain, the Netlify origin behind it, and (while a domain migration is in
+  // flight) the previous domain. Requests with no Origin header — server-side
+  // calls, curl, health checks — are passed through untouched.
+  const allowedOrigins = new Set(
+    [env.FRONTEND_URL, ...env.EXTRA_CORS_ORIGINS.split(",")]
+      .map((o) => o.trim().replace(/\/$/, ""))
+      .filter(Boolean),
+  );
+
   app.use(
     cors({
-      origin: env.FRONTEND_URL,
+      origin(origin, callback) {
+        if (!origin || allowedOrigins.has(origin.replace(/\/$/, ""))) return callback(null, true);
+        callback(new Error(`Origin not allowed by CORS: ${origin}`));
+      },
       credentials: true,
     }),
   );

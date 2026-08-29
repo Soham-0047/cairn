@@ -177,6 +177,125 @@ Total time to re-submit: ~30 minutes.
 - ✅ Frontend production build passes (13 routes)
 - ✅ Backend typechecks clean
 - ✅ Free-tier-friendly (every paid hop is optional)
+- ✅ Canonical URLs, sitemap, robots.txt and JSON-LD structured data
+- ✅ `llms.txt` / `llms-full.txt` for AI answer engines
+- ✅ Generated OG/Twitter share card (no binary asset to maintain)
+
+---
+
+## Domains, DNS and deployment
+
+The app is served from **https://cairn.sohamdev.com**. Cloudflare holds DNS for
+`sohamdev.com`; Netlify serves the frontend and Render serves the API.
+
+```
+Browser → Cloudflare (DNS only) → Netlify (Next.js) → Render (Express API)
+                                        cairn.sohamdev.com
+```
+
+### The URL lives in exactly three places
+
+| Where | Key | Value |
+|---|---|---|
+| Netlify env | `NEXT_PUBLIC_SITE_URL` | `https://cairn.sohamdev.com` |
+| Netlify env | `NEXTAUTH_URL` | `https://cairn.sohamdev.com` |
+| Render env | `FRONTEND_URL` | `https://cairn.sohamdev.com` |
+
+`NEXT_PUBLIC_SITE_URL` feeds `frontend/src/lib/site.ts`, which is the single
+source of truth for canonical tags, the sitemap, `robots.txt`, OG tags and
+structured data. Nothing else hardcodes the hostname.
+
+While more than one hostname is live, list the extras on the API in
+`EXTRA_CORS_ORIGINS` (comma-separated) so browser calls from them are not
+blocked by CORS.
+
+### Netlify + Cloudflare setup
+
+Follows Playbook A of the `sohamdev.com` domains runbook. **Order matters — add
+the domain in Netlify first.** If Netlify rejects the name, you find out before
+spending a DNS record on it.
+
+1. **Netlify → Domain management → Add a domain** → `cairn.sohamdev.com`.
+   Netlify will warn that DNS doesn't point here yet. That's expected.
+2. **Cloudflare → DNS → Add record**
+   - Type `CNAME`, Name `cairn`, Target `cairnetlify.netlify.app`
+   - **Proxy status: DNS only (grey cloud)**
+   - TTL Auto
+3. Wait 1–5 min for Netlify to provision the Let's Encrypt cert (Domain
+   management → HTTPS → *Verify DNS configuration* if impatient).
+4. **Set it as the primary domain in Netlify.** This is the SEO switch — it is
+   what generates the 301 from `cairnetlify.netlify.app`. Without it you have two
+   live, competing copies of the site. Netlify writes this redirect itself;
+   there is deliberately no rule for it in `netlify.toml`.
+
+**Grey cloud, permanently.** Not just during cert issuance. Netlify terminates
+TLS with its own cert and is already a CDN; turning on Cloudflare's proxy adds a
+second TLS layer for no gain and breaks ACME renewal. Never point the
+nameservers at Netlify either — the zone also holds the Cloudflare Email Routing
+`MX`, `SPF` and `DKIM` records, so moving it silently kills `@sohamdev.com` mail.
+
+The apex `sohamdev.com` serves the portfolio and is **not** redirected here.
+
+Confirm:
+
+```bash
+dig +short cairn.sohamdev.com                  # → cairnetlify.netlify.app.
+curl -sI https://cairn.sohamdev.com | head -3  # → HTTP/2 200, server: Netlify
+curl -sI https://cairnetlify.netlify.app  | head -1   # → 301 (NOT 200)
+curl -sI https://cairn.sohamdev.com | grep -i cf-ray   # → empty = grey cloud
+```
+
+### OAuth callbacks
+
+Both providers must list the production callback or sign-in breaks with a
+redirect-URI mismatch:
+
+- GitHub → *Settings → Developer settings → OAuth Apps* →
+  `https://cairn.sohamdev.com/api/auth/callback/github`
+- Google → *Cloud Console → Credentials* → authorized redirect URI
+  `https://cairn.sohamdev.com/api/auth/callback/google`, and authorized
+  JavaScript origin `https://cairn.sohamdev.com`
+
+---
+
+## SEO
+
+Search and answer-engine surface area lives in a few well-defined places:
+
+| File | Serves | Purpose |
+|---|---|---|
+| `frontend/src/lib/site.ts` | — | Canonical URL, keywords, FAQ copy, public route list |
+| `frontend/src/app/layout.tsx` | every page | Title template, canonical, OG/Twitter, robots directives |
+| `frontend/src/app/robots.ts` | `/robots.txt` | Crawl rules; AI crawlers opted in explicitly |
+| `frontend/src/app/sitemap.ts` | `/sitemap.xml` | Public routes only |
+| `frontend/src/app/opengraph-image.tsx` | `/opengraph-image` | Generated 1200×630 share card |
+| `frontend/src/components/JsonLd.tsx` | every page | Organization, WebSite, SoftwareApplication, FAQPage, ProfilePage |
+| `frontend/public/llms.txt` | `/llms.txt` | Short product summary for LLM crawlers |
+| `frontend/public/llms-full.txt` | `/llms-full.txt` | Long-form reference |
+
+Authenticated routes (`/dashboard`, `/settings`, `/projects`, `/quizzes`,
+`/interviews`, `/onboarding`, `/admin`) are excluded from the index both in
+`robots.txt` and with a per-route `noindex` meta tag.
+
+The landing-page FAQ and the `FAQPage` structured data are generated from the
+same `FAQ_ITEMS` array, so a rich result can never advertise an answer the page
+does not show.
+
+### After deploying
+
+1. **Google Search Console — nothing to verify.** The Domain property on
+   `sohamdev.com` (DNS TXT) already covers every present and future subdomain,
+   so `cairn.sohamdev.com` is included. `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`
+   exists only as an escape hatch if an HTML-tag verification is ever needed;
+   leave it unset. Bing Webmaster Tools can import the Search Console property.
+2. Submit `https://cairn.sohamdev.com/sitemap.xml` under that property.
+   Then link the site from the portfolio — that link is Google's main discovery
+   path to a new subdomain.
+3. Confirm the SEO title and description in `/admin/site` — an existing
+   `SiteConfig` document in Mongo keeps whatever values it was created with,
+   and those override the code defaults.
+4. Check the rich results at
+   `https://search.google.com/test/rich-results`.
 
 ---
 
@@ -207,8 +326,8 @@ The full chain for each task is editable at runtime via the admin panel, so the 
 
 ### Live demo
 
-- Hosted: _https://cairnapp.netlify.app_
-- Example portfolio: _https://cairnapp.netlify.app/example_
+- Hosted: _https://cairn.sohamdev.com_
+- Example portfolio: _https://cairn.sohamdev.com/example_
 - GitHub: _https://github.com/Soham-0047/cairn_
 
 ---
