@@ -22,6 +22,10 @@ export function TryAsGuestButton({
     setErr(null);
     try {
       await startGuestSession();
+      // Navigating to the route we are already on does not remount anything,
+      // so the spinner has to be cleared here. The guest store is reactive, so
+      // whatever was gated on the session re-renders on its own either way.
+      setLoading(false);
       router.push(redirectTo);
       router.refresh();
     } catch (e) {
@@ -43,7 +47,11 @@ export function TryAsGuestButton({
           </>
         )}
       </button>
-      {err ? <p className="text-xs text-red-700">{err}</p> : null}
+      {err ? (
+        <p className="text-xs" style={{ color: "var(--warm)", maxWidth: 280, textAlign: "center" }}>
+          {err}
+        </p>
+      ) : null}
     </div>
   );
 }

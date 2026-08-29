@@ -7,117 +7,216 @@ import { CairnMark, Icon, MagneticButton } from "./primitives";
 import { proxyFetch } from "@/lib/clientFetch";
 
 /* ------------------------ Top Nav (landing) ------------------------ */
+/**
+ * Landing-page navigation.
+ *
+ * Built as a floating island rather than a full-width bar, for two reasons.
+ *
+ * The functional one: the previous version was a fixed, fully transparent
+ * element spanning the viewport, so it swallowed clicks across the entire top
+ * strip of the page whether or not anything was drawn there. The wrapper here
+ * is `pointer-events: none` and only the island itself takes input, so the
+ * page underneath stays reachable.
+ *
+ * The visual one: a transparent bar has no relationship to what scrolls under
+ * it — it reads as legible over the dark hero by luck, and stops being legible
+ * over anything else. An island with its own surface is readable over any
+ * section, and gives the header an edge to sit against.
+ *
+ * Mobile gets a real menu. The old rule hid children with
+ * `:not(:last-child)`, which is positional rather than meaningful — it left a
+ * stray "Google" button on screen and no way to reach the navigation at all.
+ */
 export const TopNav = () => {
   const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
   const { status } = useSession();
+  const authRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
-    const f = () => setScrolled(window.scrollY > 80);
+    const f = () => setScrolled(window.scrollY > 24);
+    f();
     window.addEventListener("scroll", f, { passive: true });
     return () => window.removeEventListener("scroll", f);
   }, []);
+
+  // Escape closes whichever layer is open; an outside click closes the
+  // sign-in menu. Without both, a dropdown over a scrolling page is a trap.
+  useEffect(() => {
+    if (!menuOpen && !authOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setAuthOpen(false);
+      setMenuOpen(false);
+    };
+    const onClick = (e: MouseEvent) => {
+      if (authRef.current && !authRef.current.contains(e.target as Node)) setAuthOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClick);
+    };
+  }, [menuOpen, authOpen]);
+
+  // The mobile panel covers the page, so the page behind it must not scroll.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [menuOpen]);
+
   const navLinks: [string, string][] = [
     ["How it works", "#how"],
     ["Evaluation", "#eval"],
     ["Portfolio", "/example"],
-    // ["Pricing", "#pricing"], // hidden for hackathon
   ];
 
+  const go = (href: string) => (e: React.MouseEvent) => {
+    setMenuOpen(false);
+    if (!href.startsWith("#")) return;
+    e.preventDefault();
+    document.getElementById(href.slice(1))?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const authed = status === "authenticated";
+
   return (
-    <nav
-      className={scrolled ? "nav-blur" : ""}
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 60,
-        transition: "all .3s ease",
-        padding: scrolled ? "12px 0" : "20px 0",
-      }}
-    >
-      <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <CairnMark size={22} />
-          <span className="serif" style={{ fontSize: 22, letterSpacing: "-.02em" }}>Cairn</span>
-          <span className="pill" style={{ marginLeft: 8 }}>beta</span>
-        </Link>
-        <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 28 }}>
-          {navLinks.map(([l, h]) => (
-            <a
-              key={l}
-              href={h}
-              onClick={(e) => {
-                if (h.startsWith("#")) {
-                  e.preventDefault();
-                  const id = h.slice(1);
-                  const el = document.getElementById(id);
-                  if (el) el.scrollIntoView({ behavior: "smooth" });
-                }
-              }}
-              style={{ fontSize: 14, color: "var(--text-mid)" }}
-            >
-              {l}
-            </a>
-          ))}
-          {status === "authenticated" ? (
-            <button onClick={() => signOut()} className="btn-magnetic btn-ghost" style={{ padding: "8px 14px", fontSize: 13 }}>
-              Sign out
-            </button>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button
-                onClick={() => signIn("github")}
-                style={{
-                  background: "none",
-                  border: "none",
-                  fontSize: 14,
-                  color: "var(--text-mid)",
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-                title="Sign in with GitHub"
-              >
-                <Icon name="github" size={14} /> Sign in
-              </button>
-              <button
-                onClick={() => signIn("google")}
-                style={{
-                  background: "none",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  padding: "6px 10px",
-                  fontSize: 13,
-                  color: "var(--text-mid)",
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-                title="Sign in with Google"
-              >
-                <Icon name="google" size={14} /> Google
-              </button>
+    <>
+      <nav
+        aria-label="Main"
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 60,
+          // The wrapper spans the viewport for centring only. Input belongs to
+          // the island, so the hero underneath stays clickable edge to edge.
+          pointerEvents: "none",
+          padding: scrolled ? "10px 0" : "18px 0",
+          transition: "padding .3s cubic-bezier(.16,1,.3,1)",
+        }}
+      >
+        <div className="container">
+          <div
+            className="nav-island"
+            data-scrolled={scrolled ? "true" : "false"}
+            style={{ pointerEvents: "auto" }}
+          >
+            <Link href="/" className="nav-brand" onClick={() => setMenuOpen(false)}>
+              <CairnMark size={22} />
+              <span className="serif" style={{ fontSize: 21, letterSpacing: "-.02em" }}>
+                Cairn
+              </span>
+              <span className="pill nav-beta">beta</span>
+            </Link>
+
+            <div className="nav-links">
+              {navLinks.map(([label, href]) => (
+                <a key={label} href={href} onClick={go(href)} className="nav-link">
+                  {label}
+                </a>
+              ))}
             </div>
-          )}
-          {status === "authenticated" ? (
-            <MagneticButton href="/dashboard">
-              Go to dashboard <Icon name="arrow-right" size={14} />
-            </MagneticButton>
-          ) : (
-            <MagneticButton href="/onboarding">
-              Start your path <Icon name="arrow-right" size={14} />
-            </MagneticButton>
-          )}
+
+            <div className="nav-actions">
+              {authed ? (
+                <>
+                  <button onClick={() => signOut()} className="nav-link nav-signout">
+                    Sign out
+                  </button>
+                  <MagneticButton href="/dashboard" className="nav-cta">
+                    Dashboard <Icon name="arrow-right" size={14} />
+                  </MagneticButton>
+                </>
+              ) : (
+                <>
+                  {/* One control instead of two competing sign-in buttons —
+                      the provider is a detail, not a top-level choice. */}
+                  <div ref={authRef} style={{ position: "relative" }}>
+                    <button
+                      onClick={() => setAuthOpen((v) => !v)}
+                      className="nav-link nav-signin"
+                      aria-haspopup="menu"
+                      aria-expanded={authOpen}
+                    >
+                      Sign in
+                      <Icon name="chevron-down" size={13} />
+                    </button>
+                    {authOpen && (
+                      <div role="menu" className="nav-menu">
+                        <button role="menuitem" onClick={() => signIn("github")} className="nav-menu-item">
+                          <Icon name="github" size={15} /> Continue with GitHub
+                        </button>
+                        <button role="menuitem" onClick={() => signIn("google")} className="nav-menu-item">
+                          <Icon name="google" size={15} /> Continue with Google
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <MagneticButton href="/onboarding" className="nav-cta">
+                    Start your path <Icon name="arrow-right" size={14} />
+                  </MagneticButton>
+                </>
+              )}
+            </div>
+
+            <button
+              className="nav-burger"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+            >
+              <Icon name={menuOpen ? "x" : "menu"} size={18} />
+            </button>
+          </div>
         </div>
-      </div>
-      <style>{`
-        @media (max-width: 820px) {
-          .nav-links a:not(:last-child), .nav-links button:not(:last-child) { display: none; }
-        }
-      `}</style>
-    </nav>
+      </nav>
+
+      {menuOpen && (
+        <div className="nav-sheet" role="dialog" aria-modal="true" aria-label="Menu">
+          <div className="nav-sheet-inner">
+            {navLinks.map(([label, href]) => (
+              <a key={label} href={href} onClick={go(href)} className="nav-sheet-link">
+                {label}
+                <span className="nav-sheet-trail">
+                  <Icon name="arrow-up-right" size={15} />
+                </span>
+              </a>
+            ))}
+            <div className="nav-sheet-rule" />
+            {authed ? (
+              <>
+                <MagneticButton href="/dashboard" className="nav-sheet-cta">
+                  Go to dashboard <Icon name="arrow-right" size={14} />
+                </MagneticButton>
+                <button onClick={() => signOut()} className="nav-sheet-link">
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <>
+                <MagneticButton href="/onboarding" className="nav-sheet-cta">
+                  Start your path <Icon name="arrow-right" size={14} />
+                </MagneticButton>
+                <button onClick={() => signIn("github")} className="nav-sheet-link">
+                  <Icon name="github" size={15} /> Continue with GitHub
+                </button>
+                <button onClick={() => signIn("google")} className="nav-sheet-link">
+                  <Icon name="google" size={15} /> Continue with Google
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

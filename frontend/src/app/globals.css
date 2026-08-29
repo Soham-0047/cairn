@@ -404,6 +404,224 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
+/* ------------------------------ Top nav ------------------------------ */
+/* A floating island rather than a full-width bar: it carries its own surface,
+   so it stays legible over any section it scrolls across, and it confines
+   pointer input to itself so the page beneath the top strip stays clickable. */
+
+.nav-island {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 12px 10px 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-1) 62%, transparent);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    inset 0 1px 0 color-mix(in srgb, var(--text-hi) 7%, transparent);
+  transition:
+    background .3s ease,
+    box-shadow .3s ease,
+    transform .3s cubic-bezier(.16, 1, .3, 1);
+}
+/* Once the page has moved, the island commits to being a surface — at rest it
+   sits lightly over the hero, which is the only place it is guaranteed to be
+   over a dark ground. */
+.nav-island[data-scrolled="true"] {
+  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--border-strong),
+    inset 0 1px 0 color-mix(in srgb, var(--text-hi) 9%, transparent),
+    0 10px 30px -12px rgba(0, 0, 0, .55);
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  color: var(--text-hi);
+}
+.nav-beta {
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
+/* The links take the middle and centre themselves, so the brand and actions
+   sit at consistent distances instead of drifting apart on a wide viewport. */
+.nav-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-link {
+  font-size: 14px;
+  color: var(--text-mid);
+  background: none;
+  border: 0;
+  padding: 8px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color .18s ease;
+}
+.nav-link:hover {
+  color: var(--text-hi);
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.nav-signin {
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+.nav-signin:hover {
+  background: color-mix(in srgb, var(--text-hi) 7%, transparent);
+}
+.nav-cta {
+  padding: 9px 18px !important;
+  font-size: 13.5px !important;
+}
+
+.nav-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 232px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--bg-1);
+  box-shadow:
+    inset 0 0 0 1px var(--border-strong),
+    0 20px 44px -16px rgba(0, 0, 0, .7);
+  animation: navMenuIn .16s cubic-bezier(.16, 1, .3, 1);
+  z-index: 2;
+}
+@keyframes navMenuIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.nav-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--text-hi);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.nav-menu-item:hover {
+  background: var(--bg-2);
+}
+
+.nav-burger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-hi);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Full-screen menu, because a narrow viewport has no room to place the links
+   inline. Hiding them with :nth-child rules — what this replaces — leaves
+   whichever element happens to sit last on screen and the rest unreachable. */
+.nav-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: color-mix(in srgb, var(--bg-0) 94%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: navSheetIn .22s ease-out;
+  overflow-y: auto;
+}
+@keyframes navSheetIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.nav-sheet-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 104px 24px 40px;
+  max-width: 460px;
+  margin: 0 auto;
+}
+/* Rows are icon-then-label reading left to right. Anything meant to sit at the
+   far edge opts in with .nav-sheet-trail, rather than every row being
+   space-between — which pushed the provider icons away from their labels. */
+.nav-sheet-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 4px;
+  font-size: 19px;
+  color: var(--text-hi);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--sans);
+}
+.nav-sheet-trail {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--text-lo);
+}
+.nav-sheet-rule {
+  height: 20px;
+}
+.nav-sheet-cta {
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 900px) {
+  .nav-links,
+  .nav-actions { display: none; }
+  .nav-burger { display: inline-flex; }
+  .nav-island {
+    justify-content: space-between;
+    padding: 8px 8px 8px 16px;
+  }
+}
+@media (max-width: 380px) {
+  .nav-beta { display: none; }
+}
+
+/* The island animates its own surface; honour a reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-island,
+  .nav-menu,
+  .nav-sheet { transition: none; animation: none; }
+}
+
 .code-block {
   font-family: var(--mono);
   font-size: 13px;
@@ -432,7 +650,12 @@ section { position: relative; }
   border-radius: 6px;
 }
 
-.page-enter { animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* `backwards`, not `both`: `both` retains the end keyframe's transform for the
+   life of the element, and any non-none transform makes it the containing block
+   for position:fixed descendants. `backwards` still applies the start keyframe
+   before the animation runs, so there is no flash, but leaves no transform
+   behind afterwards. */
+.page-enter { animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 .pulse-soft { animation: pulseGlow 3s ease-in-out infinite; }
 
 .topbar-progress {

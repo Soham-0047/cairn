@@ -5,7 +5,7 @@ import { signIn, signOut, useSession } from "next-auth/react";
 import { Icon, MagneticButton, SmallEyebrow, useToast } from "@/components/ui/primitives";
 import { Sidebar, Topbar } from "@/components/ui/shell";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
-import { getGuestMeta, getGuestToken, clearGuest } from "@/lib/guest";
+import { useGuest, clearGuest } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 
 type Me = {
@@ -62,7 +62,7 @@ function savePrefs(p: Prefs) {
 export default function SettingsPage() {
   const { status, data: session } = useSession();
   const toast = useToast();
-  const [hasGuest, setHasGuest] = useState(false);
+  const { isGuest: hasGuest, meta: guestMeta } = useGuest();
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -82,7 +82,6 @@ export default function SettingsPage() {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
 
   useEffect(() => {
-    setHasGuest(!!getGuestToken());
     setPrefs(loadPrefs());
   }, []);
 
@@ -196,8 +195,6 @@ export default function SettingsPage() {
       </div>
     );
   }
-
-  const guestMeta = getGuestMeta();
   const userName = session?.user?.name?.split(" ")[0] || guestMeta?.handle || "there";
   const userEmail = session?.user?.email || (hasGuest ? "guest mode" : undefined);
 

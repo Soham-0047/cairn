@@ -2,6 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { getRouter, LLMChainError, type TaskType, type ChainEntry } from "../../llm/router.js";
 import { getCredentialStore } from "../../llm/credentialStore.js";
+import { fetchModelHealth, isEnabled as adminServiceEnabled, ping } from "../../services/admin-client.js";
+import { resolveChain } from "../../llm/routeSource.js";
 
 const router = Router();
 
@@ -11,6 +13,47 @@ router.get("/", (_req, res) => {
     providers: r.getProviderStatus(),
     chains: r.getAllChains(),
     throttle: r.getThrottleSnapshot(),
+  });
+});
+
+/**
+ * Live routing health from the admin-service: which models it currently
+ * considers usable, and the order a call for a given task would try them in
+ * right now. The resolved order is worth showing separately from the
+ * configured chain — the two differ whenever health has reordered a call, and
+ * that difference is the only visible evidence the health signal is doing
+ * anything.
+ */
+router.get("/health", async (req, res) => {
+  const enabled = adminServiceEnabled();
+  if (!enabled) {
+    return res.json({
+      enabled: false,
+      reachable: false,
+      detail: "ADMIN_SERVICE_ENABLED is off — routing follows the configured chains only.",
+      models: [],
+      resolved: null,
+    });
+  }
+
+  const [reachable, models] = await Promise.all([ping(), fetchModelHealth("llm")]);
+  const task = typeof req.query.task === "string" ? req.query.task : "";
+  let resolved: { source: string; chain: Array<{ provider: string; model: string }> } | null = null;
+  if (task) {
+    try {
+      const r = await resolveChain(getRouter().getChain(task as TaskType));
+      resolved = { source: r.source, chain: r.chain };
+    } catch {
+      resolved = null;
+    }
+  }
+
+  res.json({
+    enabled: true,
+    reachable: reachable.ok,
+    detail: reachable.detail || "",
+    models,
+    resolved,
   });
 });
 

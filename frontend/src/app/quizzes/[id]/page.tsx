@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { Icon, MagneticButton, SmallEyebrow } from "@/components/ui/primitives";
 import { Sidebar, Topbar } from "@/components/ui/shell";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
-import { getGuestToken, getGuestMeta } from "@/lib/guest";
+import { useGuest } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 
 type Quiz = {
@@ -37,11 +37,7 @@ export default function QuizDetailPage({ params }: { params: Promise<{ id: strin
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasGuest, setHasGuest] = useState(false);
-
-  useEffect(() => {
-    setHasGuest(!!getGuestToken());
-  }, []);
+  const { isGuest: hasGuest, meta: guestMeta } = useGuest();
 
   useEffect(() => {
     proxyFetch(`/quizzes/${id}`)
@@ -100,8 +96,6 @@ export default function QuizDetailPage({ params }: { params: Promise<{ id: strin
       </div>
     );
   }
-
-  const guestMeta = getGuestMeta();
   const userName = session?.user?.name?.split(" ")[0] || guestMeta?.handle || "there";
 
   return (

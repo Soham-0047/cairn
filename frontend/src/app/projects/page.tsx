@@ -5,7 +5,7 @@ import { useSession, signIn } from "next-auth/react";
 import { Icon, MagneticButton, SmallEyebrow } from "@/components/ui/primitives";
 import { Sidebar, Topbar } from "@/components/ui/shell";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
-import { getGuestToken, getGuestMeta } from "@/lib/guest";
+import { useGuest } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 
 type EvalListItem = {
@@ -29,11 +29,7 @@ export default function ProjectsListPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const [hasGuest, setHasGuest] = useState(false);
-
-  useEffect(() => {
-    setHasGuest(!!getGuestToken());
-  }, []);
+  const { isGuest: hasGuest, meta: guestMeta } = useGuest();
 
   useEffect(() => {
     if (status === "loading") return;
@@ -88,8 +84,6 @@ export default function ProjectsListPage() {
       </div>
     );
   }
-
-  const guestMeta = getGuestMeta();
   const userName = session?.user?.name?.split(" ")[0] || guestMeta?.handle || "there";
   const userEmail = session?.user?.email || (guestMeta ? "guest mode" : undefined);
 

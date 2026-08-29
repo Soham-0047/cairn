@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/primitives";
 import { Sidebar, Topbar } from "@/components/ui/shell";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
-import { getGuestToken, getGuestMeta } from "@/lib/guest";
+import { useGuest } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 
 type Resource = {
@@ -68,12 +68,8 @@ export default function DashboardPage() {
   const { status, data: session } = useSession();
   const [path, setPath] = useState<Path | null>(null);
   const [loading, setLoading] = useState(true);
-  const [hasGuest, setHasGuest] = useState(false);
+  const { isGuest: hasGuest, meta: guestMeta } = useGuest();
   const [newPathOpen, setNewPathOpen] = useState(false);
-
-  useEffect(() => {
-    setHasGuest(!!getGuestToken());
-  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated" && !hasGuest) return;
@@ -161,8 +157,6 @@ export default function DashboardPage() {
       router.push(`/quizzes/${quiz._id}`);
     }
   }
-
-  const guestMeta = getGuestMeta();
   const userName = session?.user?.name?.split(" ")[0] || guestMeta?.handle || "there";
   const userEmail = session?.user?.email || (guestMeta ? "guest mode" : undefined);
 

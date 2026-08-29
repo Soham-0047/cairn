@@ -227,6 +227,44 @@ export const Icon = ({ name, size = 18, stroke = 1.5, style, className }: IconPr
           <path d="m6 9 6 6 6-6" />
         </svg>
       );
+    case "chevron-up":
+      return (
+        <svg {...common}>
+          <path d="m6 15 6-6 6 6" />
+        </svg>
+      );
+    case "file":
+      return (
+        <svg {...common}>
+          <path d="M14 3v5h5M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+        </svg>
+      );
+    case "layers":
+      return (
+        <svg {...common}>
+          <path d="m12 3 9 5-9 5-9-5 9-5ZM3 13l9 5 9-5" />
+        </svg>
+      );
+    case "package":
+      return (
+        <svg {...common}>
+          <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3ZM4 7.5l8 4.5 8-4.5M12 12v9" />
+        </svg>
+      );
+    case "clock":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3.5 2" />
+        </svg>
+      );
+    case "alert":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7.5v5M12 16.2v.3" />
+        </svg>
+      );
     case "lock":
       return (
         <svg {...common}>

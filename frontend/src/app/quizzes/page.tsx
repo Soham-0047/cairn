@@ -5,7 +5,7 @@ import { useSession, signIn } from "next-auth/react";
 import { Icon, MagneticButton, SmallEyebrow } from "@/components/ui/primitives";
 import { Sidebar, Topbar } from "@/components/ui/shell";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
-import { getGuestToken, getGuestMeta } from "@/lib/guest";
+import { useGuest } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 
 type QuizListEntry = {
@@ -33,17 +33,13 @@ export default function QuizzesPage() {
   const { status, data: session } = useSession();
   const [quizzes, setQuizzes] = useState<QuizListEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hasGuest, setHasGuest] = useState(false);
+  const { isGuest: hasGuest, meta: guestMeta } = useGuest();
   const [activePath, setActivePath] = useState<ActivePath | null>(null);
   const [topic, setTopic] = useState("");
   const [level, setLevel] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [n, setN] = useState(5);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setHasGuest(!!getGuestToken());
-  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated" && !hasGuest) return;
@@ -104,8 +100,6 @@ export default function QuizzesPage() {
       </div>
     );
   }
-
-  const guestMeta = getGuestMeta();
   const userName = session?.user?.name?.split(" ")[0] || guestMeta?.handle || "there";
 
   return (

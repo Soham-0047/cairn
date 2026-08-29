@@ -12,7 +12,7 @@ import {
   Typewriter,
 } from "@/components/ui/primitives";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
-import { getGuestToken } from "@/lib/guest";
+import { useGuest } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 import { TryAsGuestButton } from "@/components/TryAsGuestButton";
 import VoiceInput from "@/components/VoiceInput";
@@ -65,12 +65,8 @@ export default function OnboardingPage() {
   const [phIdx, setPhIdx] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<PathError | string | null>(null);
-  const [hasGuest, setHasGuest] = useState(false);
+  const { isGuest: hasGuest } = useGuest();
   const [activePath, setActivePath] = useState<ActivePathSummary>(null);
-
-  useEffect(() => {
-    setHasGuest(!!getGuestToken());
-  }, []);
 
   useEffect(() => {
     if (status !== "authenticated" && !hasGuest) return;

@@ -22,20 +22,27 @@ import { CursorAndProgress } from "@/components/ui/CursorAndProgress";
 export default function LandingPage() {
   const [demoOpen, setDemoOpen] = useState(false);
   return (
-    <div className="page-enter">
-      <CursorAndProgress />
+    <>
+      {/* Viewport-fixed chrome lives outside .page-enter on purpose. That
+          wrapper animates a transform, and a transformed ancestor becomes the
+          containing block for position:fixed descendants — the nav scrolls
+          away with the page, and the cursor followers and scroll-progress bar
+          sit at an offset. None of this is page content, so none of it should
+          be part of the content entrance. */}
       <TopNav />
-      <Hero onDemo={() => setDemoOpen(true)} />
-      <Marquee />
-      <ProblemScene />
-      <HowItWorks />
-      <BentoEvaluation />
-      <PortfolioPreview />
-      <WhyGemma />
-      {/* <Pricing /> hidden for hackathon */}
-      <FAQ />
-      <FaqJsonLd />
-      <Footer />
+      <CursorAndProgress />
+      <div className="page-enter">
+        <Hero onDemo={() => setDemoOpen(true)} />
+        <Marquee />
+        <ProblemScene />
+        <HowItWorks />
+        <BentoEvaluation />
+        <PortfolioPreview />
+        <WhyGemma />
+        <FAQ />
+        <FaqJsonLd />
+        <Footer />
+      </div>
       <Modal open={demoOpen} onClose={() => setDemoOpen(false)} width={840}>
         <div
           style={{
@@ -65,7 +72,7 @@ export default function LandingPage() {
           </div>
         </div>
       </Modal>
-    </div>
+    </>
   );
 }
 

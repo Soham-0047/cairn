@@ -5,7 +5,7 @@ import { Evaluation } from "../models/Evaluation.js";
 import { User } from "../models/User.js";
 import { requireUser, type AuthedRequest } from "../middleware/auth.js";
 import { checkGuestLimit } from "../middleware/guestLimits.js";
-import { evaluateProject, evalEvents, type EvalProgressEvent } from "../services/eval.service.js";
+import { startEvaluation, evalEvents, type EvalProgressEvent } from "../services/eval.service.js";
 import { logger } from "../utils/logger.js";
 
 const router = Router();
@@ -37,7 +37,10 @@ router.post("/", requireUser, checkGuestLimit("evaluation"), async (req: AuthedR
   if (!user) return res.status(404).json({ error: "User not found" });
 
   try {
-    const evalDoc = await evaluateProject({
+    // Returns as soon as the record exists. The run continues in the
+    // background and the client follows it on /:id/progress — an agent run
+    // that reads a dozen files does not fit inside a request timeout.
+    const evalDoc = await startEvaluation({
       userId: req.userId!,
       repoUrl: parse.data.repoUrl,
       projectTitle: parse.data.projectTitle,
@@ -46,11 +49,11 @@ router.post("/", requireUser, checkGuestLimit("evaluation"), async (req: AuthedR
       screenshots: parse.data.screenshots,
       userAccessToken: user.githubAccessToken || undefined,
     });
-    res.json(evalDoc);
+    res.status(202).json(evalDoc);
   } catch (err) {
-    logger.error({ err }, "evaluation crashed");
+    logger.error({ err }, "could not start evaluation");
     res.status(502).json({
-      error: "Evaluation failed",
+      error: "Could not start the evaluation",
       message: err instanceof Error ? err.message : "Unknown error",
     });
   }
@@ -99,12 +102,35 @@ router.get("/:id/progress", requireUser, async (req: AuthedRequest, res) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
-  // Replay current state so a late subscriber sees what already happened.
+  // Replay current state so a late subscriber — or one that reconnected —
+  // sees everything that already happened rather than joining mid-run.
+  for (const step of item.agentSteps || []) {
+    if (!step.tool) continue;
+    write({
+      stage: "workflow",
+      type: "tool",
+      step: step.index,
+      tool: step.tool,
+      args: (step.args as Record<string, unknown>) || {},
+      thought: step.thought || "",
+      ok: !step.isError,
+    });
+  }
   const stages = item.stages || [];
   for (let i = 0; i < stages.length; i++) {
     const s = stages[i];
     if (!s) continue;
     write({ stage: i + 1, status: "complete", label: s.name, score: s.score });
+  }
+  if (item.claims?.length) {
+    const supported = item.claims.filter((c) => c.verdict === "supported").length;
+    write({
+      stage: "workflow",
+      type: "verdict",
+      supported,
+      dropped: item.claims.length - supported,
+      groundedness: item.groundedness || 0,
+    });
   }
   if (item.status === "complete") {
     write({

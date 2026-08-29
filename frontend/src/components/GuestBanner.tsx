@@ -3,23 +3,17 @@ import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useSession } from "next-auth/react";
 import { Sparkles, X } from "lucide-react";
-import { clearGuest, getGuestMeta, type GuestMeta } from "@/lib/guest";
+import { clearGuest, useGuest } from "@/lib/guest";
 
 export function GuestBanner({ bannerText }: { bannerText?: string }) {
   const { data: session } = useSession();
-  const [meta, setMeta] = useState<GuestMeta | null>(null);
+  const { meta } = useGuest();
   const [dismissed, setDismissed] = useState(false);
 
+  // A real session supersedes the guest one. Clearing the store re-renders
+  // every consumer, so nothing else has to be told.
   useEffect(() => {
-    setMeta(getGuestMeta());
-  }, []);
-
-  // If a real session shows up, drop the guest token.
-  useEffect(() => {
-    if (session?.backendToken && meta) {
-      clearGuest();
-      setMeta(null);
-    }
+    if (session?.backendToken && meta) clearGuest();
   }, [session, meta]);
 
   if (!meta || dismissed || session?.backendToken) return null;

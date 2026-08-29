@@ -1,5 +1,7 @@
 import { logger } from "../utils/logger.js";
+import { reportOutcome } from "../services/admin-client.js";
 import { loadProviders } from "./providers/registry.js";
+import { resolveChain } from "./routeSource.js";
 import {
   LLMRequest,
   LLMResponse,
@@ -26,7 +28,13 @@ export type TaskType =
   | "originality_check"
   | "embed_text"
   | "interview_turn"
-  | "interview_score";
+  | "interview_score"
+  // Repo-evaluation workflow. Each stage is its own task so the model behind
+  // it can be tuned independently — they want genuinely different things.
+  | "investigate_repo"
+  | "review_specialist"
+  | "verify_claim"
+  | "synthesize_review";
 
 export type ChainEntry = { provider: string; model: string };
 
@@ -118,6 +126,48 @@ export const DEFAULT_CHAINS: Record<TaskType, ChainEntry[]> = {
   ],
   // Run-once at end of session; quality > latency. Bigger Gemma first, then
   // Flash for JSON-mode reliability, then OpenRouter fallbacks.
+  // Multi-turn protocol following. The investigator must emit a parseable
+  // action every turn for up to ten turns; one malformed reply costs a retry.
+  // Flash variants lead on the assumption that their JSON mode holds up better
+  // over a long transcript than Gemma's, which is stronger at reasoning. That
+  // ordering is a hypothesis, not a measurement — `npm run eval` reports the
+  // parse-failure rate per model, and this chain should be reordered from it.
+  investigate_repo: [
+    { provider: "google", model: "gemini-2.5-flash" },
+    { provider: "google", model: "gemini-3.1-flash-lite" },
+    { provider: "google", model: "gemma-4-31b-it" },
+    { provider: "google", model: "gemma-4-26b-a4b-it" },
+    { provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct:free" },
+    { provider: "groq", model: "llama-3.3-70b-versatile" },
+  ],
+  // Single-shot judgement over a large dossier. Reasoning quality matters more
+  // than latency here, and the three lenses run concurrently anyway.
+  review_specialist: [
+    { provider: "google", model: "gemma-4-31b-it" },
+    { provider: "google", model: "gemma-4-26b-a4b-it" },
+    { provider: "google", model: "gemini-2.5-flash" },
+    { provider: "google", model: "gemini-3.1-flash-lite" },
+    { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
+  ],
+  // High call volume, trivial task, temperature 0. Cheapest and fastest first;
+  // a large model here buys nothing and burns the quota the rest of the
+  // workflow needs.
+  verify_claim: [
+    { provider: "google", model: "gemini-3.1-flash-lite" },
+    { provider: "google", model: "gemini-2.5-flash-lite" },
+    { provider: "google", model: "gemma-4-26b-a4b-it" },
+    { provider: "groq", model: "gemma2-9b-it" },
+    { provider: "cerebras", model: "llama3.1-8b" },
+    { provider: "google", model: "gemini-2.5-flash" },
+  ],
+  // The only output the user reads as prose. Best writer available, run once.
+  synthesize_review: [
+    { provider: "google", model: "gemma-4-31b-it" },
+    { provider: "google", model: "gemini-2.5-flash" },
+    { provider: "google", model: "gemma-4-26b-a4b-it" },
+    { provider: "google", model: "gemini-3.1-flash-lite" },
+    { provider: "openrouter", model: "deepseek/deepseek-r1:free" },
+  ],
   interview_score: [
     { provider: "google", model: "gemma-4-31b-it" },
     { provider: "google", model: "gemma-4-26b-a4b-it" },
@@ -208,6 +258,8 @@ class ThrottleTracker {
 
 export type CallTrace = {
   task: TaskType;
+  /** Whether live health reordered this call's chain, or it ran as configured. */
+  routing?: "admin-service" | "static";
   attempts: Array<{
     provider: string;
     model: string;
@@ -295,6 +347,20 @@ export class LLMRouter {
   }
 
   /**
+   * Feed one attempt's outcome back to the admin-service so its ranking
+   * self-heals for every consumer, not just this process. No-op when routing
+   * came from the static chain — there is nothing to report against.
+   */
+  private report(
+    resolved: { credentialIds: Map<string, string> },
+    entry: ChainEntry,
+    outcome: { ok: boolean; status?: number; latencyMs?: number; reason?: string },
+  ): void {
+    const id = resolved.credentialIds.get(`${entry.provider}::${entry.model}`);
+    if (id) reportOutcome(id, { ...outcome, model: entry.model });
+  }
+
+  /**
    * Walk the chain for a task until something works. Records a trace for
    * observability — useful for the "which model ran this?" admin view.
    */
@@ -302,12 +368,17 @@ export class LLMRouter {
     task: TaskType,
     req: LLMRequest,
   ): Promise<{ response: LLMResponse; trace: CallTrace }> {
-    const chain = this.chains[task];
-    if (!chain || chain.length === 0) {
+    const configured = this.chains[task];
+    if (!configured || configured.length === 0) {
       throw new Error(`No chain configured for task: ${task}`);
     }
 
-    const trace: CallTrace = { task, attempts: [] };
+    // Live health reorders the chain; the configured order is the fallback and
+    // still decides which models are eligible at all.
+    const resolved = await resolveChain(configured);
+    const chain = resolved.chain;
+
+    const trace: CallTrace = { task, routing: resolved.source, attempts: [] };
 
     let lastErr: Error | null = null;
     for (const entry of chain) {
@@ -350,6 +421,10 @@ export class LLMRouter {
               latencyMs: response.latencyMs,
             });
             lastErr = new Error(`Validation failed for ${entry.provider}/${entry.model}: ${reason}`);
+            // A 200 carrying unusable output is a failure of this model for
+            // this task, and the router's health signal should say so — an
+            // endpoint that always answers with junk is not healthy.
+            this.report(resolved, entry, { ok: false, reason: `validation: ${reason}` });
             // Surface the raw payload (truncated) so we can see what the model
             // *did* return instead of just "no phases". This is the single
             // most useful diagnostic when the chain keeps failing validation.
@@ -369,6 +444,7 @@ export class LLMRouter {
         });
         trace.finalProvider = entry.provider;
         trace.finalModel = entry.model;
+        this.report(resolved, entry, { ok: true, latencyMs: response.latencyMs });
         logger.info(
           {
             task,
@@ -390,6 +466,11 @@ export class LLMRouter {
           this.throttle.mark(entry.provider, 3600, "auth failure");
         }
         const msg = err instanceof Error ? err.message : String(err);
+        this.report(resolved, entry, {
+          ok: false,
+          reason: msg,
+          status: err instanceof ProviderError ? err.status : undefined,
+        });
         trace.attempts.push({
           provider: entry.provider,
           model: entry.model,

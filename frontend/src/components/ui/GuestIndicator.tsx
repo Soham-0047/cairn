@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { Icon } from "@/components/ui/primitives";
-import { clearGuest, getGuestMeta, type GuestMeta } from "@/lib/guest";
+import { clearGuest, useGuest } from "@/lib/guest";
 
 /**
  * Sticky banner shown to guest users on app pages.
@@ -12,17 +12,10 @@ import { clearGuest, getGuestMeta, type GuestMeta } from "@/lib/guest";
  */
 export function GuestBanner() {
   const { data: session } = useSession();
-  const [meta, setMeta] = useState<GuestMeta | null>(null);
+  const { meta } = useGuest();
 
   useEffect(() => {
-    setMeta(getGuestMeta());
-  }, []);
-
-  useEffect(() => {
-    if (session?.backendToken && meta) {
-      clearGuest();
-      setMeta(null);
-    }
+    if (session?.backendToken && meta) clearGuest();
   }, [session, meta]);
 
   if (!meta || session?.backendToken) return null;
@@ -79,10 +72,7 @@ export function GuestBanner() {
  */
 export function GuestPill() {
   const { data: session } = useSession();
-  const [meta, setMeta] = useState<GuestMeta | null>(null);
-  useEffect(() => {
-    setMeta(getGuestMeta());
-  }, []);
+  const { meta } = useGuest();
   if (!meta || session?.backendToken) return null;
   return (
     <span className="pill pill-warm" title="You are signed in as a guest. Progress will not persist past the session.">

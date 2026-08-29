@@ -1,18 +1,14 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { Mountain } from "lucide-react";
 import type { SiteConfig } from "@/lib/config";
-import { clearGuest, getGuestMeta, type GuestMeta } from "@/lib/guest";
+import { clearGuest, useGuest } from "@/lib/guest";
 
 export function Header({ config }: { config: SiteConfig }) {
   const { data: session, status } = useSession();
   const handle = session?.user?.handle;
-  const [guest, setGuest] = useState<GuestMeta | null>(null);
-  useEffect(() => {
-    setGuest(getGuestMeta());
-  }, [status]);
+  const { meta: guest } = useGuest();
   const isGuest = !session?.backendToken && !!guest;
 
   return (

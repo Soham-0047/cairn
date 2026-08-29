@@ -5,7 +5,7 @@ import { useSession, signIn } from "next-auth/react";
 import { Icon, MagneticButton, SmallEyebrow } from "@/components/ui/primitives";
 import { Sidebar, Topbar } from "@/components/ui/shell";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
-import { getGuestToken, getGuestMeta } from "@/lib/guest";
+import { useGuest } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 
 type InterviewListEntry = {
@@ -36,16 +36,12 @@ export default function InterviewsPage() {
   const [items, setItems] = useState<InterviewListEntry[]>([]);
   const [activePath, setActivePath] = useState<ActivePath | null>(null);
   const [loading, setLoading] = useState(true);
-  const [hasGuest, setHasGuest] = useState(false);
+  const { isGuest: hasGuest, meta: guestMeta } = useGuest();
   const [role, setRole] = useState("");
   const [level, setLevel] = useState<"junior" | "mid" | "senior">("junior");
   const [focus, setFocus] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setHasGuest(!!getGuestToken());
-  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated" && !hasGuest) return;
@@ -101,8 +97,6 @@ export default function InterviewsPage() {
       </div>
     );
   }
-
-  const guestMeta = getGuestMeta();
   const userName = session?.user?.name?.split(" ")[0] || guestMeta?.handle || "there";
 
   return (

@@ -6,7 +6,6 @@ import {
   Icon,
   MagneticButton,
   ProgressRing,
-  ProviderChain,
   SmallEyebrow,
   Tabs,
   useToast,
@@ -14,6 +13,15 @@ import {
 import { Sidebar, Topbar } from "@/components/ui/shell";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
 import { proxyFetch } from "@/lib/clientFetch";
+
+import {
+  AgentTrajectory,
+  EvidenceLedger,
+  ScoreBreakdown,
+  type AgentStep,
+  type Claim,
+  type ScoreComponent,
+} from "@/components/ui/AgentRun";
 
 type StageResult = { name: string; score: number; summary: string; findings: string[] };
 type ModelUsage = { stage: string; provider: string; model: string; latencyMs: number };
@@ -45,13 +53,38 @@ type EvalDoc = {
   status: "queued" | "running" | "complete" | "failed";
   error?: string;
   createdAt?: string;
+
+  agentSteps?: AgentStep[];
+  filesRead?: string[];
+  claims?: Claim[];
+  groundedness?: number;
+  scoreComponents?: ScoreComponent[];
+  shrinkage?: number;
+  passReason?: string;
+  verdictLine?: string;
+  runCost?: {
+    llmCalls: number;
+    githubReads: number;
+    agentBudgetUsed: number;
+    totalLatencyMs: number;
+  };
 };
 
 type StageProgress = {
   status: "pending" | "running" | "complete" | "failed";
   score?: number;
   label: string;
+  detail?: string;
 };
+
+/** The workflow's phases, in the order they run. Mirrors WorkflowPhase on the API. */
+const PHASES = [
+  { key: "investigate", label: "Investigating the repository" },
+  { key: "structural", label: "Reading structural signals" },
+  { key: "specialists", label: "Three reviewers, in parallel" },
+  { key: "verify", label: "Checking every claim against the source" },
+  { key: "synthesize", label: "Writing the review" },
+] as const;
 
 export default function ProjectEvalPage() {
   const params = useParams<{ id: string }>();
@@ -59,6 +92,14 @@ export default function ProjectEvalPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
   const [progress, setProgress] = useState<Record<string, StageProgress>>({});
+  // Tool calls arriving over SSE while the run is still going. Once the run
+  // finishes, the persisted steps on the document take over.
+  const [liveSteps, setLiveSteps] = useState<AgentStep[]>([]);
+  const [liveVerdict, setLiveVerdict] = useState<{
+    supported: number;
+    dropped: number;
+    groundedness: number;
+  } | null>(null);
 
   useEffect(() => {
     proxyFetch(`/evaluations/${params.id}`)
@@ -97,14 +138,49 @@ export default function ProjectEvalPage() {
               const payload = line.slice(5).trim();
               if (!payload) continue;
               try {
-                const evt = JSON.parse(payload) as {
-                  stage: number | "final";
-                  status: "running" | "complete" | "failed";
-                  label: string;
-                  score?: number;
-                  passed?: boolean;
-                  finalScore?: number;
-                };
+                const evt = JSON.parse(payload) as Record<string, any>;
+
+                // Workflow events carry the live detail: which tool the agent
+                // reached for, and what verification made of the result.
+                if (evt.stage === "workflow") {
+                  if (evt.type === "phase") {
+                    setProgress((prev) => ({
+                      ...prev,
+                      [evt.phase]: {
+                        status: evt.status,
+                        label: evt.label,
+                        detail: evt.detail,
+                      },
+                    }));
+                  } else if (evt.type === "tool") {
+                    setLiveSteps((prev) =>
+                      prev.some((s) => s.index === evt.step)
+                        ? prev
+                        : [
+                            ...prev,
+                            {
+                              index: evt.step,
+                              thought: evt.thought || "",
+                              tool: evt.tool,
+                              args: evt.args || {},
+                              observation: "",
+                              isError: !evt.ok,
+                              latencyMs: 0,
+                              provider: "",
+                              model: "",
+                            },
+                          ],
+                    );
+                  } else if (evt.type === "verdict") {
+                    setLiveVerdict({
+                      supported: evt.supported,
+                      dropped: evt.dropped,
+                      groundedness: evt.groundedness,
+                    });
+                  }
+                  continue;
+                }
+
                 const key = String(evt.stage);
                 setProgress((prev) => ({
                   ...prev,
@@ -165,6 +241,19 @@ export default function ProjectEvalPage() {
   }
 
   const score = Math.round(data.finalScore * 100);
+  const steps = data.agentSteps?.length ? data.agentSteps : liveSteps;
+  const claims = data.claims || [];
+  const verified = claims.filter((c) => c.verdict === "supported").length;
+  // The facts worth putting next to the score: what the agent looked at, and
+  // how much of what it said survived being checked.
+  const runFacts = [
+    data.filesRead?.length ? { label: "files read", value: String(data.filesRead.length) } : null,
+    claims.length ? { label: "claims verified", value: `${verified}/${claims.length}` } : null,
+    data.runCost?.llmCalls ? { label: "model calls", value: String(data.runCost.llmCalls) } : null,
+    data.runCost?.totalLatencyMs
+      ? { label: "seconds", value: (data.runCost.totalLatencyMs / 1000).toFixed(0) }
+      : null,
+  ].filter((f): f is { label: string; value: string } => f !== null);
   const stageScores = (data.stages || []).map((s) => ({ ...s, pct: Math.round(s.score * 100) }));
   const repoShort = data.repoUrl.replace(/^https?:\/\/(www\.)?github\.com\//, "");
   const created = data.createdAt ? new Date(data.createdAt) : null;
@@ -226,9 +315,23 @@ export default function ProjectEvalPage() {
                 )}
               </div>
               <h2 className="serif" style={{ fontSize: 36, margin: 0, letterSpacing: "-.02em" }}>{data.projectTitle}</h2>
-              <p style={{ color: "var(--text-mid)", fontSize: 15, marginTop: 8, maxWidth: 560, lineHeight: 1.5 }}>
+              {data.verdictLine ? (
+                <p className="serif" style={{ color: "var(--text-hi)", fontSize: 20, marginTop: 10, maxWidth: 620, lineHeight: 1.45, letterSpacing: "-.01em" }}>
+                  {data.verdictLine}
+                </p>
+              ) : null}
+              <p style={{ color: "var(--text-mid)", fontSize: 15, marginTop: 8, maxWidth: 620, lineHeight: 1.6 }}>
                 {data.feedback}
               </p>
+              {runFacts.length > 0 && (
+                <div style={{ display: "flex", gap: 14, marginTop: 14, flexWrap: "wrap" }}>
+                  {runFacts.map((f) => (
+                    <span key={f.label} className="mono" style={{ fontSize: 11, color: "var(--text-lo)" }}>
+                      <span style={{ color: "var(--text-mid)" }}>{f.value}</span> {f.label}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
                 <MagneticButton variant="ghost" href={data.repoUrl}>
                   <Icon name="github" size={14} /> Open repo
@@ -241,7 +344,10 @@ export default function ProjectEvalPage() {
           </div>
 
           {data.status === "running" || data.status === "queued" ? (
-            <LiveProgress progress={progress} />
+            <div style={{ display: "grid", gap: 16, marginBottom: 16 }}>
+              <LiveProgress progress={progress} verdict={liveVerdict} />
+              {liveSteps.length > 0 && <AgentTrajectory steps={liveSteps} live />}
+            </div>
           ) : null}
 
           <Tabs
@@ -249,16 +355,38 @@ export default function ProjectEvalPage() {
             onChange={setTab}
             tabs={[
               { label: "Overview", value: "overview" },
-              { label: "Code review", value: "code" },
-              { label: "Visual review", value: "visual" },
+              { label: "Review", value: "code" },
+              { label: `Investigation${steps.length ? ` · ${steps.length}` : ""}`, value: "agent" },
+              { label: `Evidence${claims.length ? ` · ${verified}/${claims.length}` : ""}`, value: "evidence" },
+              { label: "Visual", value: "visual" },
               { label: "Credential", value: "credential" },
             ]}
           />
 
           <div style={{ marginTop: 24 }}>
-            {tab === "overview" && <Overview stages={stageScores} models={data.modelsUsed} vulnerabilities={data.vulnerabilities} />}
+            {tab === "overview" && (
+              <div style={{ display: "grid", gap: 16 }}>
+                {data.scoreComponents?.length ? (
+                  <ScoreBreakdown
+                    components={data.scoreComponents}
+                    groundedness={data.groundedness || 0}
+                    shrinkage={data.shrinkage || 0}
+                    passReason={data.passReason || ""}
+                  />
+                ) : null}
+                <Overview stages={stageScores} models={data.modelsUsed} vulnerabilities={data.vulnerabilities} />
+              </div>
+            )}
             {tab === "code" && <CodeReview strengths={data.strengths} improvements={data.improvements} stages={stageScores} />}
-            {tab === "visual" && <VisualReview screenshots={data.screenshots} />}
+            {tab === "agent" && <AgentTrajectory steps={steps} live={data.status === "running"} />}
+            {tab === "evidence" && (
+              <EvidenceLedger
+                claims={claims}
+                groundedness={data.groundedness || 0}
+                filesRead={data.filesRead || []}
+              />
+            )}
+            {tab === "visual" && <VisualReview screenshots={data.screenshots} models={data.modelsUsed} />}
             {tab === "credential" && <Credential data={data} score={score} />}
           </div>
         </div>
@@ -268,52 +396,58 @@ export default function ProjectEvalPage() {
   );
 }
 
-const STAGE_LABELS = ["Structural analysis", "Code review", "Visual review", "Synthesis"];
-
-const LiveProgress = ({ progress }: { progress: Record<string, StageProgress> }) => {
-  const rows = STAGE_LABELS.map((label, i) => {
-    const key = String(i + 1);
-    const p = progress[key];
-    const status = p?.status || (i === 0 ? "running" : "pending");
-    return { label, status, score: p?.score, idx: i };
-  });
-  const finalP = progress["final"];
+/**
+ * Live view of a run in flight. Phases come from the workflow itself rather
+ * than a fixed list, so a phase that is skipped (no screenshots) or that fails
+ * shows as what it was instead of stalling on "pending" forever.
+ */
+const LiveProgress = ({
+  progress,
+  verdict,
+}: {
+  progress: Record<string, StageProgress>;
+  verdict: { supported: number; dropped: number; groundedness: number } | null;
+}) => {
+  const firstPending = PHASES.findIndex((p) => !progress[p.key]);
   return (
-    <div className="card" style={{ padding: 22, marginBottom: 16 }}>
-      <SmallEyebrow>Live progress · streaming</SmallEyebrow>
+    <div className="card" style={{ padding: 22 }}>
+      <SmallEyebrow>Running · streaming</SmallEyebrow>
       <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
-        {rows.map((r) => (
-          <div
-            key={r.idx}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: "10px 12px",
-              borderRadius: 10,
-              background: "var(--bg-2)",
-              boxShadow: "inset 0 0 0 1px var(--border)",
-            }}
-          >
-            <StatusDot status={r.status} />
-            <span style={{ fontSize: 14, flex: 1 }}>{r.label}</span>
-            {typeof r.score === "number" && (
-              <span className="mono" style={{ fontSize: 11, color: "var(--text-mid)" }}>
-                {Math.round(r.score * 100)}/100
-              </span>
-            )}
-          </div>
-        ))}
-        {finalP && (
-          <div style={{ fontSize: 12, color: "var(--text-mid)", marginTop: 4 }}>
-            {finalP.status === "complete"
-              ? "Synthesis complete — refreshing results…"
-              : finalP.status === "failed"
-              ? "Synthesis failed."
-              : "Synthesising…"}
-          </div>
-        )}
+        {PHASES.map((phase, i) => {
+          const p = progress[phase.key];
+          // The first phase with no event yet is the one currently starting.
+          const status = p?.status || (i === firstPending ? "running" : "pending");
+          return (
+            <div
+              key={phase.key}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: "var(--bg-2)",
+                boxShadow: "inset 0 0 0 1px var(--border)",
+                opacity: status === "pending" ? 0.55 : 1,
+              }}
+            >
+              <StatusDot status={status} />
+              <span style={{ fontSize: 14, flex: 1 }}>{p?.label || phase.label}</span>
+              {p?.detail && (
+                <span className="mono" style={{ fontSize: 11, color: "var(--text-mid)" }}>
+                  {p.detail}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
+      {verdict && (
+        <p style={{ fontSize: 12.5, color: "var(--text-mid)", marginTop: 12, marginBottom: 0, lineHeight: 1.55 }}>
+          {verdict.supported} of {verdict.supported + verdict.dropped} claims held up against the
+          source they cite.
+        </p>
+      )}
     </div>
   );
 };
@@ -444,7 +578,11 @@ const Overview = ({
               <SmallEyebrow>
                 Stage {i + 1} · {s.name}
               </SmallEyebrow>
-              {m && <ProviderChain providers={[m.model, "Gemini"]} active={0} />}
+              {m?.model && (
+                <span className="mono" style={{ fontSize: 10.5, color: "var(--text-lo)" }}>
+                  {m.provider}/{m.model}
+                </span>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10 }}>
               <div className="serif" style={{ fontSize: 44, lineHeight: 1, color: s.pct >= 80 ? "#6ee7b7" : "#a5b4fc" }}>
@@ -561,7 +699,13 @@ const CodeReview = ({
   );
 };
 
-const VisualReview = ({ screenshots }: { screenshots: Screenshot[] }) => {
+const VisualReview = ({
+  screenshots,
+  models,
+}: {
+  screenshots: Screenshot[];
+  models: ModelUsage[];
+}) => {
   const [active, setActive] = useState(0);
   if (!screenshots?.length) {
     return (
@@ -572,6 +716,8 @@ const VisualReview = ({ screenshots }: { screenshots: Screenshot[] }) => {
     );
   }
   const cur = screenshots[active] || screenshots[0];
+  // Name the model that actually ran, rather than the one we hoped would.
+  const visionModel = models?.find((m) => /visual|vision/i.test(m.stage))?.model;
   return (
     <div className="vis-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16 }}>
       <div>
@@ -611,7 +757,11 @@ const VisualReview = ({ screenshots }: { screenshots: Screenshot[] }) => {
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
           <SmallEyebrow>{cur.label} · annotated</SmallEyebrow>
-          <span className="pill pill-indigo" style={{ marginLeft: "auto", fontSize: 10 }}>Gemma 4 12B vision</span>
+          {visionModel && (
+            <span className="pill pill-indigo" style={{ marginLeft: "auto", fontSize: 10 }}>
+              {visionModel}
+            </span>
+          )}
         </div>
         <div style={{ position: "relative", background: "#0a0c14" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}

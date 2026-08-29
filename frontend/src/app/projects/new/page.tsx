@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/primitives";
 import { Sidebar, Topbar } from "@/components/ui/shell";
 import { GuestBanner } from "@/components/ui/GuestIndicator";
-import { getGuestToken, getGuestMeta } from "@/lib/guest";
+import { useGuest } from "@/lib/guest";
 import { proxyFetch } from "@/lib/clientFetch";
 
 type Screenshot = { label: string; dataUrl: string; tone?: string };
@@ -30,15 +30,8 @@ export default function NewProjectPage() {
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasGuest, setHasGuest] = useState(false);
-  const [guestAllowsScreenshots, setGuestAllowsScreenshots] = useState(true);
-
-  useEffect(() => {
-    const t = getGuestToken();
-    setHasGuest(!!t);
-    const m = getGuestMeta();
-    setGuestAllowsScreenshots(m?.limits?.allowScreenshots ?? true);
-  }, []);
+  const { isGuest: hasGuest, meta: guestMeta } = useGuest();
+  const guestAllowsScreenshots = guestMeta?.limits?.allowScreenshots ?? true;
 
   if (status === "unauthenticated" && !hasGuest) {
     return (
@@ -123,16 +116,17 @@ export default function NewProjectPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || data.error || "Evaluation failed");
-      // Let the scanning scene play through, then route
-      setTimeout(() => router.push(`/projects/${data._id}`), 9000);
+      if (!res.ok) throw new Error(data.message || data.error || "Could not start the evaluation");
+      // The API returns as soon as the record exists and runs the evaluation in
+      // the background, so this is a short transition rather than a wait. The
+      // results page streams the real run — watching that beats watching a
+      // placeholder animation stand in for it.
+      setTimeout(() => router.push(`/projects/${data._id}`), 1200);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
       setScanning(false);
     }
   }
-
-  const guestMeta = getGuestMeta();
   const userName = session?.user?.name?.split(" ")[0] || guestMeta?.handle || "Guest";
 
   return (
@@ -147,7 +141,7 @@ export default function NewProjectPage() {
         <GuestBanner />
         <Topbar
           title="Submit a project"
-          subtitle="Multimodal evaluation · Gemma 4 27B + 12B"
+          subtitle="An agent reads the repository, then every claim is checked against the source"
           right={
             <span className="pill">
               <Icon name="cmd" size={11} /> <span className="kbd">⌘</span> <span className="kbd">K</span>

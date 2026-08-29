@@ -32,6 +32,23 @@ type ProvidersResponse = {
   throttle: { provider: string; remainingMs: number; reason: string }[];
 };
 
+type ModelHealth = {
+  provider: string;
+  model: string;
+  health: number;
+  rpmRemaining?: number;
+  lastFailureAt?: string;
+  disabled?: boolean;
+};
+
+type HealthResponse = {
+  enabled: boolean;
+  reachable: boolean;
+  detail: string;
+  models: ModelHealth[];
+  resolved: { source: string; chain: ChainEntry[] } | null;
+};
+
 export default function AdminProvidersPage() {
   const [data, setData] = useState<ProvidersResponse | null>(null);
   const [savingTask, setSavingTask] = useState<string | null>(null);
@@ -48,10 +65,19 @@ export default function AdminProvidersPage() {
   const [testError, setTestError] = useState<{ message: string; trace?: TestTrace | null } | null>(null);
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
 
   useEffect(() => {
     refresh();
   }, []);
+
+  // Health is fetched per selected task so the resolved order shown below is
+  // the order that task would actually be tried in right now.
+  useEffect(() => {
+    adminFetch<HealthResponse>(`/providers/health?task=${encodeURIComponent(testTask)}`)
+      .then(setHealth)
+      .catch(() => setHealth(null));
+  }, [testTask]);
 
   async function refresh() {
     try {
@@ -140,6 +166,8 @@ export default function AdminProvidersPage() {
         Each task walks its chain top-to-bottom. First enabled, non-throttled provider wins.
       </p>
       {err ? <p className="mt-2 text-sm text-red-700">{err}</p> : null}
+
+      {health ? <HealthPanel health={health} task={testTask} /> : null}
 
       <section className="mt-6">
         <div className="flex items-center justify-between">
@@ -364,5 +392,97 @@ function TraceView({ trace }: { trace: TestTrace }) {
         })}
       </ol>
     </div>
+  );
+}
+
+/**
+ * Live routing health from the admin-service.
+ *
+ * The resolved order is shown next to the configured chain because that is the
+ * only place the health signal becomes visible: when the two differ, something
+ * upstream is rate-limited or failing and the router has already moved around
+ * it. Identical lists mean the configured order was already the healthiest one.
+ */
+function HealthPanel({ health, task }: { health: HealthResponse; task: string }) {
+  if (!health.enabled) {
+    return (
+      <section className="mt-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Live routing</h2>
+        <div className="card mt-3 !p-3">
+          <p className="text-sm text-zinc-600">{health.detail}</p>
+        </div>
+      </section>
+    );
+  }
+
+  const healthy = health.models.filter((m) => !m.disabled && m.health >= 0.35);
+  const degraded = health.models.filter((m) => m.disabled || m.health < 0.35);
+
+  return (
+    <section className="mt-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Live routing</h2>
+        <span
+          className={`badge ${health.reachable ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}
+        >
+          {health.reachable ? "admin-service connected" : "unreachable — using configured chains"}
+        </span>
+      </div>
+      {!health.reachable && health.detail ? (
+        <p className="mt-2 text-xs text-zinc-500">{health.detail}</p>
+      ) : null}
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="card !p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Model health ({healthy.length} usable{degraded.length ? `, ${degraded.length} degraded` : ""})
+          </p>
+          <ul className="mt-2 space-y-1">
+            {health.models.length === 0 ? (
+              <li className="text-xs text-zinc-500">No models reported.</li>
+            ) : (
+              health.models.slice(0, 12).map((m) => (
+                <li key={`${m.provider}/${m.model}`} className="flex items-center gap-2 text-xs">
+                  <span
+                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{
+                      background: m.disabled || m.health < 0.35 ? "#f59e0b" : m.health < 0.7 ? "#eab308" : "#10b981",
+                    }}
+                  />
+                  <span className="font-mono text-zinc-700">
+                    {m.provider}/{m.model}
+                  </span>
+                  <span className="ml-auto font-mono text-zinc-500">{m.health.toFixed(2)}</span>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+
+        <div className="card !p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Order for <span className="font-mono normal-case">{task}</span>
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {health.resolved?.source === "admin-service"
+              ? "Reordered by live health."
+              : "Configured order — no live health applied."}
+          </p>
+          <ol className="mt-2 space-y-1">
+            {(health.resolved?.chain || []).slice(0, 8).map((e, i) => (
+              <li key={`${e.provider}/${e.model}`} className="flex items-center gap-2 font-mono text-xs">
+                <span className="w-4 text-zinc-400">{i + 1}</span>
+                <span className="text-zinc-700">
+                  {e.provider}/{e.model}
+                </span>
+              </li>
+            ))}
+            {!health.resolved?.chain?.length ? (
+              <li className="text-xs text-zinc-500">No resolved order available.</li>
+            ) : null}
+          </ol>
+        </div>
+      </div>
+    </section>
   );
 }

@@ -1,7 +1,11 @@
 import { ApiCredential, ApiCredentialDoc } from "../models/ApiCredential.js";
 import { decryptSecret, encryptSecret } from "../utils/crypto.js";
 import { logger } from "../utils/logger.js";
-import { fetchCredentials, isEnabled as adminServiceEnabled, reportCredentialResult } from "../services/admin-client.js";
+import {
+  fetchRouteCandidates,
+  isEnabled as adminServiceEnabled,
+  reportOutcome,
+} from "../services/admin-client.js";
 
 /**
  * In-memory pool of API credentials, fronted by the ApiCredential collection.
@@ -127,7 +131,7 @@ class CredentialStore {
 
   async markSuccess(credId: string): Promise<void> {
     if (adminServiceEnabled()) {
-      reportCredentialResult(credId, true);
+      reportOutcome(credId, { ok: true });
       return;
     }
     try {
@@ -142,7 +146,7 @@ class CredentialStore {
 
   async markFailure(credId: string, reason: string): Promise<void> {
     if (adminServiceEnabled()) {
-      reportCredentialResult(credId, false, reason);
+      reportOutcome(credId, { ok: false, reason });
       return;
     }
     try {
@@ -222,22 +226,42 @@ export function getCredentialStore(): CredentialStore {
   return _store;
 }
 
+/**
+ * Keys come from the same route-models response the router uses for health, so
+ * a key the service considers exhausted is already ranked last here — the two
+ * layers cannot disagree about which credential is usable.
+ *
+ * The service returns one row per (provider, model, key); this collapses them
+ * to one entry per key per provider, keeping the healthiest ranking, because a
+ * credential's usability is a property of the key rather than of the model it
+ * was last seen on.
+ */
 async function loadFromAdminService(): Promise<Map<string, Candidate[]>> {
-  const services = await fetchCredentials(true);
+  const candidates = await fetchRouteCandidates("llm", { force: true });
+  const bestByKey = new Map<string, { c: (typeof candidates)[number]; rank: number }>();
+
+  candidates.forEach((c, index) => {
+    const dedupe = `${c.provider}::${c.id || c.apiKey}`;
+    const existing = bestByKey.get(dedupe);
+    if (!existing || index < existing.rank) bestByKey.set(dedupe, { c, rank: index });
+  });
+
   const next = new Map<string, Candidate[]>();
-  for (const [service, creds] of Object.entries(services)) {
-    next.set(
-      service,
-      creds.map((c) => ({
-        id: c.id,
-        service,
-        label: c.label,
-        key: c.key,
-        metadata: c.metadata,
-        priority: c.priority,
-      })),
-    );
+  for (const { c, rank } of bestByKey.values()) {
+    const arr = next.get(c.provider) || [];
+    arr.push({
+      id: c.id,
+      service: c.provider,
+      label: String(c.metadata.label ?? `${c.provider} key`),
+      key: c.apiKey,
+      metadata: c.metadata,
+      // Health-derived ordering, so the provider's own key loop tries the
+      // healthiest first without needing to know about health at all.
+      priority: rank,
+    });
+    next.set(c.provider, arr);
   }
+  for (const arr of next.values()) arr.sort((a, b) => a.priority - b.priority);
   return next;
 }
 
