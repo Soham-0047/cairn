@@ -1,27 +1,100 @@
-# Cairn — Gemma 4 Powered Learning + Career Engine
+# Cairn
 
-> Submission for the [Gemma 4 Challenge](https://dev.to/) — Build With Gemma 4 track.
->
-> A personalized AI learning + career engine that turns the internet's chaos of free tutorials
-> into a 12-week path, verifies your projects (text **and** screenshots), and builds you a
-> recruiter-ready public portfolio.
+**A learning path you can follow, and a project review you can argue with.**
+
+Cairn turns a plain-English career goal into a 12-week path, then verifies the
+projects you build along the way — reading your repository the way a senior
+engineer would, and showing you its working. Projects that hold up become
+signed credentials on a public portfolio a recruiter can check without an
+account.
 
 ---
 
-## Why this is a Gemma 4 submission
+## The problem this solves
 
-The judging criteria for "Build With Gemma 4" emphasize **intentional and effective use of Gemma 4**. Cairn uses three different Gemma 4 variants for three different jobs in the same product:
+Someone teaching themselves to code can find a thousand tutorials and no
+answer to the only question that matters: **is what I just built any good?**
 
-| Job | Model | Why this variant |
-|---|---|---|
-| Parse a free-form learning goal into structured profile | **Gemma 4 4B** | Small, fast — runs the request in ~600ms on Google AI Studio's free tier |
-| Generate the 12-week personalized path | **Gemma 4 27B** | Needs heavy reasoning + long context to load 50+ resources & similar-learner data |
-| Code review of submitted GitHub repos | **Gemma 4 27B** | Reasoning over multi-file source code |
-| **Multimodal review of project screenshots** ⭐ | **Gemma 4 12B (vision)** | Native vision capability — looks at the actual UI |
+The feedback they can get today is all bad in a different way:
 
-The whole orchestration runs through a **provider-agnostic router** with automatic fallback to Gemini / DeepSeek / Llama when free-tier rate limits hit. Editing one file (`backend/src/llm/providers/registry.ts`) swaps the entire model lineup — by design, so this codebase can be re-purposed for the next Llama/Qwen/Mistral hackathon without touching business logic.
+| Where they ask | What they get |
+|---|---|
+| A friend or mentor | Good, but slow, rationed, and most people don't have one |
+| A code-review bot | Style and lint. Nothing about whether the project is real work |
+| Posting it online | Silence, or one person's taste stated as fact |
+| Asking a chatbot | A confident review of a repository it mostly did not read |
 
-The **multimodal eval** (Stage 3) is the hero feature: upload up to 4 screenshots of your running app alongside the GitHub repo, and Gemma 4 12B compares what the code claims against what the UI actually looks like.
+That last one is the trap, and it is the one this project is about. Paste a
+repository URL into a chat window and you get a fluent, specific-sounding
+review. Check the details and a good share of them are about code that isn't
+there. The output is indistinguishable from a real review right up to the point
+where you act on it.
+
+**The bottleneck is not generating a review. It is generating one whose claims
+can be checked.** Cairn's answer: an agent that chooses what to read, three
+reviewers that judge it separately, and a verification pass that drops anything
+the source doesn't actually show — including its own findings.
+
+Who this is for: self-taught developers and bootcamp graduates with no senior
+engineer to ask, and the recruiters who need to tell a real portfolio from a
+row of tutorial clones.
+
+---
+
+## How the review works
+
+Submitting a repository runs a five-phase workflow. Each phase is a separate
+router task, so the model behind each one is tuned independently.
+
+```
+  ┌─ investigate ────────────────────────────────────────────────┐
+  │  An agent with read-only repository tools:                   │
+  │    list_files · read_file · search_code                      │
+  │    read_history · read_manifest                              │
+  │  It forms a hypothesis, reads what would change its mind,    │
+  │  and must cite a file and line for every finding.            │
+  └──────────────────────────┬───────────────────────────────────┘
+                             ▼
+  ┌─ structural signals ─────────────────────────────────────────┐
+  │  Computed from the repository, never asked of a model:       │
+  │  README depth · test files · source size · commit pattern    │
+  │  project hygiene · Dependabot alerts                         │
+  │  This is the anchor the score falls back toward.             │
+  └──────────────────────────┬───────────────────────────────────┘
+                             ▼
+  ┌─ three reviewers, in parallel ───────────────────────────────┐
+  │  originality  — your work, or a tutorial followed?           │
+  │  craft        — would you merge this?                        │
+  │  skill match  — do the claimed skills appear in the code?    │
+  │  Separate lenses, so a polished clone can score well-built   │
+  │  and unoriginal at the same time.                            │
+  └──────────────────────────┬───────────────────────────────────┘
+                             ▼
+  ┌─ verify ─────────────────────────────────────────────────────┐
+  │  Every claim is re-read against the lines it cites.          │
+  │  Mechanical check: does that file exist, was it opened,      │
+  │  does that line number exist?                                │
+  │  Semantic check: do those lines actually show this?          │
+  │  Anything unsupported is dropped before it is scored.        │
+  └──────────────────────────┬───────────────────────────────────┘
+                             ▼
+  ┌─ synthesise ─────────────────────────────────────────────────┐
+  │  The written review, built only from surviving claims.       │
+  │  Score = weighted components, shrunk toward the structural   │
+  │  anchor in proportion to how much failed verification.       │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+Screenshots, when supplied, are reviewed by a vision model concurrently with
+the investigation and enter as one more weighted component.
+
+**Everything above is visible in the product.** The results page shows the
+agent's tool calls with its reasoning, every claim with its verdict — including
+the discarded ones and why — and how each component was weighted. A user who
+disagrees with their score can see exactly which step to argue with.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the design decisions and
+[EVALUATION.md](EVALUATION.md) for how it is measured against a baseline.
 
 ---
 
@@ -30,42 +103,61 @@ The **multimodal eval** (Stage 3) is the hero feature: upload up to 4 screenshot
 ```
 frontend/ (Next.js 15 · React · TypeScript · Tailwind)
    ├── /                     → Landing (server-rendered, configured by SiteConfig)
-   ├── /onboarding           → Free-form goal → structured profile (Gemma 4 4B)
+   ├── /onboarding           → Free-form goal → structured profile
    ├── /dashboard            → 12-week path with progress tracking
-   ├── /projects/new         → Submit GitHub repo + optional screenshots (HERO)
-   ├── /projects/[id]        → Multi-stage evaluation results
+   ├── /projects/new         → Submit a GitHub repo + optional screenshots
+   ├── /projects/[id]        → Live agent run, evidence ledger, score breakdown
    ├── /u/[handle]           → Public portfolio (SSR, recruiter-shareable)
    ├── /example              → Static demo portfolio (no signup needed)
-   └── /admin                → CMS for everything — see below
-        ├── /admin/site      → Brand name, logo, colors, hero copy, SEO, feature flags
-        ├── /admin/providers → Reorder LLM chains per task; test routes live
-        ├── /admin/resources → Curate the learning-resource corpus
-        └── /admin/strings   → Free-form UI string overrides
+   └── /admin                → CMS + live routing health
 
 backend/ (Express · TypeScript · MongoDB · Mongoose)
-   ├── llm/                  → Provider-agnostic router with fallback chains
-   │   ├── router.ts         → Per-task routing + throttle tracker + call tracing
-   │   ├── providers/        → Google AI Studio, OpenRouter, Groq, Cerebras, Together
-   │   └── prompts.ts        → All prompt templates
-   ├── services/
-   │   ├── path.service.ts   → Goal parsing + path generation
-   │   ├── eval.service.ts   → 3-stage multimodal evaluation pipeline
-   │   └── github.service.ts → Repo snapshot via Octokit
-   ├── models/               → User, Path, Evaluation, Credential, Resource, SiteConfig
-   └── routes/
-       ├── auth.ts           → NextAuth ↔ JWT exchange
-       ├── paths.ts          → Path CRUD + progress
-       ├── evaluations.ts    → Project submission + retrieval
-       ├── portfolio.ts      → Public portfolio (no auth)
-       ├── config.ts         → Public read of SiteConfig
-       └── admin/            → Token-gated CMS routes
+   ├── agents/
+   │   ├── runtime.ts            → Bounded ReAct loop (budget, repeat suppression, repair)
+   │   ├── tools/repo.ts         → Read-only GitHub toolbelt + citation ledger
+   │   └── repo-eval/
+   │       ├── investigator.ts   → Chooses what evidence to gather
+   │       ├── specialists.ts    → Three parallel lenses
+   │       ├── verifier.ts       → Claims vs. cited source
+   │       ├── scoring.ts        → Confidence-weighted aggregation
+   │       └── orchestrator.ts   → Wires the phases together
+   ├── evals/                    → Baseline, metrics, harness (npm run eval)
+   ├── llm/
+   │   ├── router.ts             → Per-task chains, throttles, call tracing
+   │   ├── routeSource.ts        → Health-aware reordering (Power-of-Two-Choices)
+   │   └── providers/            → Google AI Studio, OpenRouter, Groq, Cerebras, Together
+   ├── services/                 → path, eval, github, interview, quiz, originality
+   ├── models/                   → User, Path, Evaluation, Credential, Resource, SiteConfig
+   └── routes/                   → auth, paths, evaluations (SSE), portfolio, admin
 ```
 
-### The admin panel
+### Model routing
 
-Everything that's visible to a user — brand name, logo, primary color, hero title, every CTA, footer note, SEO meta, OG image, feature flags, the entire AI provider routing — is editable at `/admin` without touching code or redeploying. The admin gate is a single `ADMIN_SECRET` env-var token (sufficient for solo-founder/hackathon ops; trivial to upgrade to NextAuth-allowlist for production).
+No business logic names a model. Each logical task (`investigate_repo`,
+`verify_claim`, `synthesize_review`, …) resolves to an ordered chain of
+(provider, model) pairs, and the router walks it until one succeeds.
 
-This makes the whole codebase **hackathon-reusable**: re-skin for a Llama challenge in 30 minutes — change brand + LLM chains in the admin panel.
+Two inputs decide the order, and they answer different questions:
+
+- **The static chain** encodes *task fitness* — which models are actually good
+  at this job, hand-ordered. A health endpoint cannot supply that.
+- **The admin-service** supplies *current health* — which keys and models are
+  rate-limited or failing right now, aggregated across every project drawing on
+  the same free-tier pool.
+
+Fitness picks the candidates; health reorders within them, using
+Power-of-Two-Choices rather than strict best-first. Best-first is what makes
+free tiers collapse: every instance computes the same ranking, floods the same
+model, exhausts it, and moves as one to the next — using a parallel quota
+serially. Sampling two from the healthy head and taking the better one spreads
+the load without ever picking something bad.
+
+Outcomes are reported back after each call, so the ranking self-heals for every
+consumer rather than each process rediscovering the same dead key. When the
+service is unreachable the chains run exactly as configured.
+
+Swapping the entire model lineup is one file: `backend/src/llm/providers/registry.ts`.
+Reordering per task needs no file at all — `/admin/providers`.
 
 ---
 
@@ -73,14 +165,13 @@ This makes the whole codebase **hackathon-reusable**: re-skin for a Llama challe
 
 ### Prerequisites
 
-- Node.js 20+ (use `nvm use 20`)
-- A MongoDB instance — local (`mongod`) or [MongoDB Atlas free M0 cluster](https://www.mongodb.com/cloud/atlas/register)
-- A Google AI Studio API key — [get one free](https://aistudio.google.com/apikey) (gives access to Gemma 4 + Gemini)
+- Node.js 20+ (`nvm use 20`)
+- MongoDB — local (`mongod`) or [Atlas free M0](https://www.mongodb.com/cloud/atlas/register)
+- A Google AI Studio API key — [free](https://aistudio.google.com/apikey)
 
-Optional (for fallback richness):
-- OpenRouter API key — Gemma 4 free models + DeepSeek/Llama fallbacks
-- Groq API key — fast Gemma/Llama inference
-- A GitHub OAuth app for login — [create one](https://github.com/settings/developers)
+Optional: OpenRouter / Groq / Cerebras keys for a richer fallback chain, a
+GitHub OAuth app for login, a GitHub PAT to raise the API rate limit for public
+repository reads.
 
 ### Setup
 
@@ -88,98 +179,53 @@ Optional (for fallback richness):
 # Backend
 cd backend
 cp .env.example .env
-# Edit .env — set MONGODB_URI, JWT_SECRET, ADMIN_SECRET, GOOGLE_AI_API_KEY (minimum)
+# Minimum: MONGODB_URI, JWT_SECRET, ADMIN_SECRET, GOOGLE_AI_API_KEY
 npm install
-npm run seed      # seeds the resource corpus + default LLM chains
-npm run dev       # starts on :4000
+npm run seed      # resource corpus + default routing chains
+npm test          # 50 offline tests, no keys or database needed
+npm run dev       # :4000
 
-# Frontend (in a separate terminal)
+# Frontend (separate terminal)
 cd frontend
 cp .env.example .env.local
-# Edit .env.local — set GITHUB_CLIENT_ID/SECRET, NEXTAUTH_SECRET (matches backend JWT_SECRET)
-# Important: ADMIN_SECRET in frontend must match ADMIN_SECRET in backend
+# Set GITHUB_CLIENT_ID/SECRET, NEXTAUTH_SECRET
+# ADMIN_SECRET must match the backend's
 npm install
-npm run dev       # starts on :3000
+npm run dev       # :3000
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. The admin panel is at `/admin` — enter the
+`ADMIN_SECRET` from the backend `.env`.
 
-To use the admin panel: open http://localhost:3000/admin and enter the `ADMIN_SECRET` from your backend `.env`.
+### Measuring it
+
+```bash
+cd backend
+npm run eval                 # baseline vs. agent over the case set
+npm run eval -- --pipeline agent --reference evals/grades.json
+```
+
+Writes a JSON record of every per-case number and a Markdown comparison table.
+The shipped grades are provisional — see [EVALUATION.md](EVALUATION.md) before
+citing any figure from it.
 
 ---
 
-## How the multi-stage evaluation works (the hero feature)
+## Production notes
 
-When a user submits a GitHub repo + optional screenshots at `/projects/new`:
-
-```
-                    ┌──────────────────────────┐
-                    │ POST /api/evaluations    │
-                    │ { repoUrl, screenshots } │
-                    └────────────┬─────────────┘
-                                 │
-              ┌──────────────────┴──────────────────┐
-              ▼                                     ▼
-   Stage 1: Structural (deterministic)    Stage 2: Code review
-   ─────────────────────────────────      ────────────────────────
-   • README quality                       LLMRouter → Gemma 4 27B
-   • Commit count + unique authors        ├ Originality
-   • Test presence                        ├ Functionality
-   • File-tree size                       ├ Quality
-                                          └ Skill match
-                                                    │
-                                                    ▼
-                            Stage 3 (if screenshots): Visual review
-                            ─────────────────────────────────────────
-                            LLMRouter → Gemma 4 12B (vision)
-                            • Does UI match what code claims?
-                            • Polish level: shipped / demo / prototype?
-                            • Specific findings per screenshot
-                                                    │
-                                                    ▼
-                                       Stage 4: Synthesis
-                                       ──────────────────
-                                       • Weighted final score
-                                       • Pass threshold: ≥0.65 + originality ≥0.55
-                                       • If passing: HMAC-signed credential
-                                         issued to user's public portfolio
-```
-
-Every API call records **which provider and model actually ran** — visible to the user on the eval page. That transparency is part of the "intentional model selection" story for judges.
-
-If Google AI Studio rate-limits, the router automatically falls back to OpenRouter's free Gemma 4 27B endpoint, then to Gemini 2.5 Pro, then to DeepSeek V3. No user-visible failure.
-
----
-
-## Configurability for future hackathons
-
-The whole product is designed to be retargeted. To submit Cairn to (say) a **Llama 4 Challenge**:
-
-1. **Change one file** — `backend/src/llm/providers/registry.ts` — to point at Llama models on Groq / Together.
-2. **Or no file at all** — re-order the chains in `/admin/providers` and Llama becomes the primary.
-3. **Re-brand** — change name / logo / colors / hero copy in `/admin/site`.
-
-Total time to re-submit: ~30 minutes.
-
----
-
-## Production checklist (already done)
-
-- ✅ TypeScript strict mode everywhere
-- ✅ Helmet + CORS + rate limiting on backend
-- ✅ Zod input validation on every endpoint
-- ✅ Pino structured logging
-- ✅ Per-request error boundaries
-- ✅ JWT auth with HMAC-signed credentials
-- ✅ Admin gate (env-token; upgradeable to allowlist)
-- ✅ SSR + revalidation on portfolio for SEO + low latency
-- ✅ Mobile-responsive UI (Tailwind)
-- ✅ Frontend production build passes (13 routes)
-- ✅ Backend typechecks clean
-- ✅ Free-tier-friendly (every paid hop is optional)
-- ✅ Canonical URLs, sitemap, robots.txt and JSON-LD structured data
-- ✅ `llms.txt` / `llms-full.txt` for AI answer engines
-- ✅ Generated OG/Twitter share card (no binary asset to maintain)
+- TypeScript strict mode across both packages
+- Helmet, CORS and rate limiting on the API
+- Zod validation on every endpoint
+- Pino structured logging; per-request error boundaries
+- JWT auth; HMAC-signed credentials
+- Evaluation runs in the background and streams over SSE — an agent run reading
+  a dozen files does not fit in a request timeout
+- Every LLM call is bounded by a timeout and falls through on failure
+- Degrades on every optional dependency: no vector store, no admin-service, no
+  Dependabot, no screenshots — each is absent rather than fatal
+- SSR + revalidation on portfolios; canonical URLs, sitemap, robots, JSON-LD
+- `llms.txt` / `llms-full.txt` for AI answer engines
+- Generated OG/Twitter card, no binary asset to maintain
 
 ---
 
@@ -298,40 +344,6 @@ does not show.
    `https://search.google.com/test/rich-results`.
 
 ---
-
-## Hackathon submission template (Build With Gemma 4)
-
-Use the text below to fill the DEV submission form.
-
-### What I built
-
-Cairn is a personalized AI learning + career engine. A user states their goal in plain English ("I want to become an AI engineer in 6 months — I know Python basics"), and Gemma 4 builds them a 12-week path: phases, weekly milestones with deliverables, curated free resources, and projects to build. As they ship projects, Cairn pulls their GitHub repo and runs a multi-stage evaluation — code review with Gemma 4 27B, and a **multimodal visual review with Gemma 4 12B** that looks at screenshots of the running app. Verified projects become HMAC-signed credentials on a public, recruiter-shareable portfolio.
-
-### Which Gemma 4 model and why
-
-Three Gemma 4 variants, each for the job that fits its profile:
-
-- **Gemma 4 4B** — goal-statement parsing. Small + fast extraction of structured profile from free text. Sub-second latency, runs many times per onboarding session.
-- **Gemma 4 27B** — path generation and code review. Heavy reasoning + long context (loads the resource corpus + similar past learners + the user's full code in one prompt). The 128K context window matters here.
-- **Gemma 4 12B (vision)** — multimodal project screenshot review. This is the hero — same model handles text + images, and the visual review reliably catches "looks polished but the code is sloppy" and "code is good but the UI is a placeholder" mismatches.
-
-The full chain for each task is editable at runtime via the admin panel, so the routing decisions are transparent + tweakable.
-
-### Tech stack
-
-- Frontend: Next.js 15 (App Router, SSR), React 18, TypeScript, Tailwind, NextAuth (GitHub OAuth)
-- Backend: Node.js 20, Express, TypeScript, Mongoose, MongoDB
-- LLM routing: custom provider-agnostic router with fallback chains, throttle tracking, and per-task config
-- Providers (Gemma 4 first; Gemini / DeepSeek / Llama as automatic fallbacks): Google AI Studio, OpenRouter, Groq, Cerebras, Together AI
-
-### Live demo
-
-- Hosted: _https://cairn.sohamdev.com_
-- Example portfolio: _https://cairn.sohamdev.com/example_
-- GitHub: _https://github.com/Soham-0047/cairn_
-
----
-
 ## License
 
-MIT — use this codebase as a starter for any AI-product hackathon. Attribution welcome but not required.
+MIT.

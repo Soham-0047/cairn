@@ -12,7 +12,11 @@
     "start": "node dist/index.js",
     "seed": "tsx src/scripts/seed.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "refresh-seo": "tsx src/scripts/refresh-seo.ts"
+    "refresh-seo": "tsx src/scripts/refresh-seo.ts",
+    "eval": "tsx src/evals/run.ts",
+    "eval:baseline": "tsx src/evals/run.ts --pipeline baseline",
+    "eval:agent": "tsx src/evals/run.ts --pipeline agent",
+    "test": "tsx --test $(find src -name '*.test.ts' | sort)"
   },
   "dependencies": {
     "@octokit/rest": "^21.0.2",
