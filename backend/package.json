@@ -16,7 +16,8 @@
     "eval": "tsx src/evals/run.ts",
     "eval:baseline": "tsx src/evals/run.ts --pipeline baseline",
     "eval:agent": "tsx src/evals/run.ts --pipeline agent",
-    "test": "tsx --test $(find src -name '*.test.ts' | sort)"
+    "test": "tsx --test $(find src -name '*.test.ts' | sort)",
+    "trajectory": "tsx src/scripts/capture-trajectory.ts"
   },
   "dependencies": {
     "@octokit/rest": "^21.0.2",
